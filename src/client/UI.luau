@@ -662,8 +662,8 @@ function UI:BuildPadSurfaces()
 
 	-- the golden island stays hidden (and unwalkable) until your first rebirth
 	self.GoldenParts = {}
-	for _, partName in { "GoldenIsland", "RebirthBridge" } do
-		local part = workspace:FindFirstChild(partName)
+	for _, partName in { "GoldenIsland", "GoldenPortal", "ReturnPortal" } do
+		local part = tree:FindFirstChild(partName)
 		if part and part:IsA("BasePart") then
 			table.insert(self.GoldenParts, part)
 		end
@@ -860,6 +860,11 @@ function UI:UpdatePads()
 		for _, part in self.GoldenParts do
 			part.LocalTransparencyModifier = if goldUnlocked then 0 else 1
 			part.CanCollide = goldUnlocked
+			for _, descendant in part:GetDescendants() do
+				if descendant:IsA("SurfaceGui") then
+					descendant.Enabled = goldUnlocked
+				end
+			end
 		end
 	end
 
@@ -955,7 +960,7 @@ function UI:Update(state)
 		self:ShowTicker("👇 Press ROLL to pull your first card!")
 	end
 	if previous and state.Rebirths > previous.Rebirths then
-		self:ShowTicker("🌟 The Golden Island has revealed itself! Cross the bridge behind the altar →")
+		self:ShowTicker("🌟 The Golden Island awaits! Step on the portal beside the altar →")
 	end
 
 	if previous then

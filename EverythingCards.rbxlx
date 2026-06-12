@@ -214,25 +214,25 @@ local function rnode(def)
 end
 
 -- row 1 (z -104)
-rnode({ Id = "carddouble", Name = "Card Doubler", Desc = "2x cards from every roll", Pos = { -45, -124 }, Cost = 3 })
-rnode({ Id = "goldinc", Name = "Golden Income", Desc = "x3 ALL coin earnings, forever", Pos = { -15, -124 }, Cost = 2, CostMult = 1.7, MaxLevel = nil })
-rnode({ Id = "eternalluck", Name = "Eternal Luck", Desc = "+10% rare pool chance, forever", Pos = { 15, -124 }, Cost = 2, CostMult = 1.8, MaxLevel = nil })
-rnode({ Id = "quickstart", Name = "Quick Start", Desc = "+10K starting coins after rebirth", Pos = { 45, -124 }, Cost = 1, CostMult = 2, MaxLevel = nil })
+rnode({ Id = "carddouble", Name = "Card Doubler", Desc = "2x cards from every roll", Pos = { -45, -380 }, Cost = 3 })
+rnode({ Id = "goldinc", Name = "Golden Income", Desc = "x3 ALL coin earnings, forever", Pos = { -15, -380 }, Cost = 2, CostMult = 1.7, MaxLevel = nil })
+rnode({ Id = "eternalluck", Name = "Eternal Luck", Desc = "+10% rare pool chance, forever", Pos = { 15, -380 }, Cost = 2, CostMult = 1.8, MaxLevel = nil })
+rnode({ Id = "quickstart", Name = "Quick Start", Desc = "+10K starting coins after rebirth", Pos = { 45, -380 }, Cost = 1, CostMult = 2, MaxLevel = nil })
 -- row 2 (z -120)
-rnode({ Id = "cardquad", Name = "Card Quadrupler", Desc = "2x cards AGAIN (4x total)", Pos = { -45, -140 }, Cost = 8, Requires = "carddouble" })
-rnode({ Id = "timelord", Name = "Time Lord", Desc = "Roll cooldown x0.6", Pos = { -15, -140 }, Cost = 4 })
-rnode({ Id = "bigbag", Name = "Bottomless Bag", Desc = "+30 backpack capacity", Pos = { 15, -140 }, Cost = 2, CostMult = 1.6, MaxLevel = nil })
-rnode({ Id = "dupegold", Name = "Dupe Tycoon", Desc = "+100% dupe & sell value", Pos = { 45, -140 }, Cost = 2, CostMult = 1.7, MaxLevel = nil })
+rnode({ Id = "cardquad", Name = "Card Quadrupler", Desc = "2x cards AGAIN (4x total)", Pos = { -45, -396 }, Cost = 8, Requires = "carddouble" })
+rnode({ Id = "timelord", Name = "Time Lord", Desc = "Roll cooldown x0.6", Pos = { -15, -396 }, Cost = 4 })
+rnode({ Id = "bigbag", Name = "Bottomless Bag", Desc = "+30 backpack capacity", Pos = { 15, -396 }, Cost = 2, CostMult = 1.6, MaxLevel = nil })
+rnode({ Id = "dupegold", Name = "Dupe Tycoon", Desc = "+100% dupe & sell value", Pos = { 45, -396 }, Cost = 2, CostMult = 1.7, MaxLevel = nil })
 -- row 3 (z -136)
-rnode({ Id = "overdrive", Name = "Scanner Overdrive", Desc = "Fresh accounts found 2x faster", Pos = { -45, -156 }, Cost = 3 })
-rnode({ Id = "chrono", Name = "Chrono Master", Desc = "Auto-roll cooldown x0.6", Pos = { -15, -156 }, Cost = 4, Requires = "timelord" })
-rnode({ Id = "slotmaster", Name = "Slot Master", Desc = "+1 equip slot", Pos = { 15, -156 }, Cost = 4, CostMult = 1.8, MaxLevel = nil })
-rnode({ Id = "luckyseven", Name = "Lucky Sevens", Desc = "Every 7th roll is Rare or better", Pos = { 45, -156 }, Cost = 6 })
+rnode({ Id = "overdrive", Name = "Scanner Overdrive", Desc = "Fresh accounts found 2x faster", Pos = { -45, -412 }, Cost = 3 })
+rnode({ Id = "chrono", Name = "Chrono Master", Desc = "Auto-roll cooldown x0.6", Pos = { -15, -412 }, Cost = 4, Requires = "timelord" })
+rnode({ Id = "slotmaster", Name = "Slot Master", Desc = "+1 equip slot", Pos = { 15, -412 }, Cost = 4, CostMult = 1.8, MaxLevel = nil })
+rnode({ Id = "luckyseven", Name = "Lucky Sevens", Desc = "Every 7th roll is Rare or better", Pos = { 45, -412 }, Cost = 6 })
 -- row 4 (z -152)
-rnode({ Id = "tokenhoard", Name = "Token Hoarder", Desc = "+1 token from every rebirth", Pos = { -45, -172 }, Cost = 12, MaxLevel = 2, CostMult = 1 })
-rnode({ Id = "keeper", Name = "Legendary Keeper", Desc = "Legendary cards survive rebirth", Pos = { -15, -172 }, Cost = 10 })
-rnode({ Id = "godmagnet", Name = "God Magnet", Desc = "3x chance to roll a legend", Pos = { 15, -172 }, Cost = 5 })
-rnode({ Id = "dreamprofit", Name = "Dream Profits", Desc = "Offline earnings: full rate, 24h cap", Pos = { 45, -172 }, Cost = 5 })
+rnode({ Id = "tokenhoard", Name = "Token Hoarder", Desc = "+1 token from every rebirth", Pos = { -45, -428 }, Cost = 12, MaxLevel = 2, CostMult = 1 })
+rnode({ Id = "keeper", Name = "Legendary Keeper", Desc = "Legendary cards survive rebirth", Pos = { -15, -428 }, Cost = 10 })
+rnode({ Id = "godmagnet", Name = "God Magnet", Desc = "3x chance to roll a legend", Pos = { 15, -428 }, Cost = 5 })
+rnode({ Id = "dreamprofit", Name = "Dream Profits", Desc = "Offline earnings: full rate, 24h cap", Pos = { 45, -428 }, Cost = 5 })
 
 Config.RebirthTree = R
 
@@ -1622,7 +1622,10 @@ end)
 
 -- ===== world ===============================================================
 
-tvTicker = TreeBuilder.Build(onBuyUpgrade)
+tvTicker = TreeBuilder.Build(onBuyUpgrade, function(player)
+	local session = sessions[player]
+	return if session then session.Data.Rebirths else 0
+end)
 Leaderboard.Start()
 
 -- the card pool scans fastest when someone bought Fresh Scan upgrades
@@ -1975,6 +1978,7 @@ return Scanner
 -- Pad billboards (cost/level, per-player) are drawn client-side; this module
 -- only builds the shared geometry and the buy prompts.
 
+local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 
 local Shared = ReplicatedStorage:WaitForChild("Shared")
@@ -1982,8 +1986,11 @@ local Config = require(Shared:WaitForChild("Config"))
 
 local TreeBuilder = {}
 
-local PAD_SIZE = Vector3.new(8, 0.6, 8)
-local PAD_Y = 0.3
+local PAD_SIZE = Vector3.new(8, 1, 8)
+local PAD_Y = 0.5
+
+-- the golden island lives far out in the void, reachable only by portal
+local GOLD_CENTER_Z = -400
 
 local function makePart(props)
 	local part = Instance.new("Part")
@@ -2021,7 +2028,7 @@ local function buildPad(treeNode, folder, onBuy)
 		Material = Enum.Material.Neon,
 		Parent = pad,
 	})
-	trim.Transparency = 0.2
+	trim.Transparency = 0
 
 	local prompt = Instance.new("ProximityPrompt")
 	prompt.ActionText = "Buy"
@@ -2129,6 +2136,32 @@ local function buildTv(folder)
 	return ticker
 end
 
+-- Both islands are built here at runtime so the layout is always correct
+-- no matter how the project is loaded (fresh file, Rojo sync, old place).
+local function buildIslands(folder)
+	local main = makePart({
+		Name = "MainIsland",
+		Size = Vector3.new(164, 8, 144),
+		CFrame = CFrame.new(0, -4, 5),
+		Color = Color3.fromRGB(181, 166, 219),
+		Material = Enum.Material.Plastic,
+		Parent = folder,
+	})
+	main.TopSurface = Enum.SurfaceType.Studs
+	main.Locked = true
+
+	local gold = makePart({
+		Name = "GoldenIsland",
+		Size = Vector3.new(130, 8, 120),
+		CFrame = CFrame.new(0, -4, GOLD_CENTER_Z),
+		Color = Color3.fromRGB(242, 199, 64),
+		Material = Enum.Material.Plastic,
+		Parent = folder,
+	})
+	gold.TopSurface = Enum.SurfaceType.Studs
+	gold.Locked = true
+end
+
 -- The rebirth altar lives on the MAIN island's south edge (you must be able
 -- to rebirth before the golden island reveals itself). The client shows a
 -- confirm panel when the prompt fires.
@@ -2137,7 +2170,7 @@ local function buildAltar(folder)
 	altar.Name = "RebirthAltar"
 	altar.Anchored = true
 	altar.Size = Vector3.new(12, 1.2, 12)
-	altar.Position = Vector3.new(0, 0.6, -60)
+	altar.Position = Vector3.new(0, 0.6, -59)
 	altar.Color = Color3.fromRGB(255, 215, 60)
 	altar.Material = Enum.Material.Neon
 	altar.Parent = folder
@@ -2152,12 +2185,40 @@ local function buildAltar(folder)
 	prompt.Parent = altar
 end
 
--- Builds everything. onBuy(player, nodeId) is called when a pad prompt fires.
+local function buildPortal(folder, name, position, labelText)
+	local portal = makePart({
+		Name = name,
+		Size = Vector3.new(8, 0.6, 8),
+		CFrame = CFrame.new(position),
+		Color = Color3.fromRGB(255, 215, 60),
+		Material = Enum.Material.Neon,
+		Parent = folder,
+	})
+	local gui = Instance.new("SurfaceGui")
+	gui.Face = Enum.NormalId.Top
+	gui.SizingMode = Enum.SurfaceGuiSizingMode.PixelsPerStud
+	gui.PixelsPerStud = 25
+	gui.Parent = portal
+	local label = Instance.new("TextLabel")
+	label.BackgroundTransparency = 1
+	label.Size = UDim2.new(1, 0, 1, 0)
+	label.Rotation = 180
+	label.Font = Enum.Font.GothamBlack
+	label.TextSize = 30
+	label.TextWrapped = true
+	label.TextColor3 = Color3.fromRGB(60, 40, 0)
+	label.Text = labelText
+	label.Parent = gui
+	return portal
+end
+
+-- Builds everything. onBuy(player, nodeId) is called when a pad prompt
+-- fires; getRebirths(player) gates the golden portal server-side.
 -- Returns the TV ticker label so the server can announce big pulls on it.
-function TreeBuilder.Build(onBuy)
-	-- if this synced into an older place, clear leftover world pieces that
-	-- would sit under/over the new islands
-	for _, legacyName in { "Baseplate", "SpawnPlaza" } do
+function TreeBuilder.Build(onBuy, getRebirths)
+	-- clear world pieces from any older version of the game, no matter how
+	-- this got loaded (old file, Rojo sync into an existing place, etc.)
+	for _, legacyName in { "Baseplate", "SpawnPlaza", "MainIsland", "GoldenIsland", "RebirthBridge", "UpgradeTree" } do
 		local legacy = workspace:FindFirstChild(legacyName)
 		if legacy then
 			legacy:Destroy()
@@ -2166,6 +2227,8 @@ function TreeBuilder.Build(onBuy)
 
 	local folder = Instance.new("Folder")
 	folder.Name = "UpgradeTree"
+
+	buildIslands(folder)
 
 	for _, treeNode in Config.Tree do
 		buildPad(treeNode, folder, onBuy)
@@ -2183,6 +2246,36 @@ function TreeBuilder.Build(onBuy)
 	end
 
 	buildAltar(folder)
+
+	-- portals between the islands (golden side is rebirth-gated)
+	local toGold = buildPortal(folder, "GoldenPortal", Vector3.new(12, 0.3, -62), "⭐ GOLDEN ISLAND")
+	local toMain = buildPortal(folder, "ReturnPortal", Vector3.new(0, 0.3, GOLD_CENTER_Z + 54), "↩ BACK")
+
+	local teleportCooldown = {}
+	Players.PlayerRemoving:Connect(function(player)
+		teleportCooldown[player] = nil
+	end)
+	local function makeTeleporter(portal, destination, needsRebirth)
+		portal.Touched:Connect(function(hit)
+			local character = hit.Parent
+			local player = character and Players:GetPlayerFromCharacter(character)
+			if not player then
+				return
+			end
+			if needsRebirth and getRebirths(player) < 1 then
+				return
+			end
+			local now = os.clock()
+			if (teleportCooldown[player] or 0) > now then
+				return
+			end
+			teleportCooldown[player] = now + 2
+			character:PivotTo(CFrame.new(destination))
+		end)
+	end
+	makeTeleporter(toGold, Vector3.new(0, 4, GOLD_CENTER_Z + 44), true)
+	makeTeleporter(toMain, Vector3.new(0, 4, -50), false)
+
 	local ticker = buildTv(folder)
 	folder.Parent = workspace
 	return ticker
@@ -3399,8 +3492,8 @@ function UI:BuildPadSurfaces()
 
 	-- the golden island stays hidden (and unwalkable) until your first rebirth
 	self.GoldenParts = {}
-	for _, partName in { "GoldenIsland", "RebirthBridge" } do
-		local part = workspace:FindFirstChild(partName)
+	for _, partName in { "GoldenIsland", "GoldenPortal", "ReturnPortal" } do
+		local part = tree:FindFirstChild(partName)
 		if part and part:IsA("BasePart") then
 			table.insert(self.GoldenParts, part)
 		end
@@ -3597,6 +3690,11 @@ function UI:UpdatePads()
 		for _, part in self.GoldenParts do
 			part.LocalTransparencyModifier = if goldUnlocked then 0 else 1
 			part.CanCollide = goldUnlocked
+			for _, descendant in part:GetDescendants() do
+				if descendant:IsA("SurfaceGui") then
+					descendant.Enabled = goldUnlocked
+				end
+			end
 		end
 	end
 
@@ -3692,7 +3790,7 @@ function UI:Update(state)
 		self:ShowTicker("👇 Press ROLL to pull your first card!")
 	end
 	if previous and state.Rebirths > previous.Rebirths then
-		self:ShowTicker("🌟 The Golden Island has revealed itself! Cross the bridge behind the altar →")
+		self:ShowTicker("🌟 The Golden Island awaits! Step on the portal beside the altar →")
 	end
 
 	if previous then
@@ -3771,71 +3869,7 @@ return UI
       <string name="Name">Workspace</string>
       <bool name="NeedsPivotMigration">false</bool>
     </Properties>
-    <Item class="Part" referent="22">
-      <Properties>
-        <string name="Name">GoldenIsland</string>
-        <bool name="Anchored">true</bool>
-        <token name="BottomSurface">0</token>
-        <Color3uint8 name="Color3uint8">15910720</Color3uint8>
-        <bool name="Locked">true</bool>
-        <token name="Material">256</token>
-        <Vector3 name="Position">
-          <X>0</X>
-          <Y>-4</Y>
-          <Z>-160</Z>
-        </Vector3>
-        <Vector3 name="size">
-          <X>130</X>
-          <Y>8</Y>
-          <Z>120</Z>
-        </Vector3>
-        <token name="TopSurface">3</token>
-      </Properties>
-    </Item>
-    <Item class="Part" referent="23">
-      <Properties>
-        <string name="Name">MainIsland</string>
-        <bool name="Anchored">true</bool>
-        <token name="BottomSurface">0</token>
-        <Color3uint8 name="Color3uint8">11904731</Color3uint8>
-        <bool name="Locked">true</bool>
-        <token name="Material">256</token>
-        <Vector3 name="Position">
-          <X>0</X>
-          <Y>-4</Y>
-          <Z>5</Z>
-        </Vector3>
-        <Vector3 name="size">
-          <X>164</X>
-          <Y>8</Y>
-          <Z>144</Z>
-        </Vector3>
-        <token name="TopSurface">3</token>
-      </Properties>
-    </Item>
-    <Item class="Part" referent="24">
-      <Properties>
-        <string name="Name">RebirthBridge</string>
-        <bool name="Anchored">true</bool>
-        <token name="BottomSurface">0</token>
-        <Color3uint8 name="Color3uint8">16766553</Color3uint8>
-        <bool name="Locked">true</bool>
-        <token name="Material">288</token>
-        <Vector3 name="Position">
-          <X>0</X>
-          <Y>-0.5</Y>
-          <Z>-83.5</Z>
-        </Vector3>
-        <Vector3 name="size">
-          <X>10</X>
-          <Y>1</Y>
-          <Z>33</Z>
-        </Vector3>
-        <token name="TopSurface">0</token>
-        <float name="Transparency">0.15</float>
-      </Properties>
-    </Item>
-    <Item class="SpawnLocation" referent="25">
+    <Item class="SpawnLocation" referent="22">
       <Properties>
         <string name="Name">SpawnLocation</string>
         <bool name="Anchored">true</bool>

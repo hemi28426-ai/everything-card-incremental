@@ -604,7 +604,10 @@ end)
 
 -- ===== world ===============================================================
 
-tvTicker = TreeBuilder.Build(onBuyUpgrade)
+tvTicker = TreeBuilder.Build(onBuyUpgrade, function(player)
+	local session = sessions[player]
+	return if session then session.Data.Rebirths else 0
+end)
 Leaderboard.Start()
 
 -- the card pool scans fastest when someone bought Fresh Scan upgrades

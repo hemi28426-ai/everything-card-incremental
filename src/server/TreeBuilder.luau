@@ -3,6 +3,7 @@
 -- Pad billboards (cost/level, per-player) are drawn client-side; this module
 -- only builds the shared geometry and the buy prompts.
 
+local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 
 local Shared = ReplicatedStorage:WaitForChild("Shared")
@@ -10,8 +11,11 @@ local Config = require(Shared:WaitForChild("Config"))
 
 local TreeBuilder = {}
 
-local PAD_SIZE = Vector3.new(8, 0.6, 8)
-local PAD_Y = 0.3
+local PAD_SIZE = Vector3.new(8, 1, 8)
+local PAD_Y = 0.5
+
+-- the golden island lives far out in the void, reachable only by portal
+local GOLD_CENTER_Z = -400
 
 local function makePart(props)
 	local part = Instance.new("Part")
@@ -49,7 +53,7 @@ local function buildPad(treeNode, folder, onBuy)
 		Material = Enum.Material.Neon,
 		Parent = pad,
 	})
-	trim.Transparency = 0.2
+	trim.Transparency = 0
 
 	local prompt = Instance.new("ProximityPrompt")
 	prompt.ActionText = "Buy"
@@ -157,6 +161,32 @@ local function buildTv(folder)
 	return ticker
 end
 
+-- Both islands are built here at runtime so the layout is always correct
+-- no matter how the project is loaded (fresh file, Rojo sync, old place).
+local function buildIslands(folder)
+	local main = makePart({
+		Name = "MainIsland",
+		Size = Vector3.new(164, 8, 144),
+		CFrame = CFrame.new(0, -4, 5),
+		Color = Color3.fromRGB(181, 166, 219),
+		Material = Enum.Material.Plastic,
+		Parent = folder,
+	})
+	main.TopSurface = Enum.SurfaceType.Studs
+	main.Locked = true
+
+	local gold = makePart({
+		Name = "GoldenIsland",
+		Size = Vector3.new(130, 8, 120),
+		CFrame = CFrame.new(0, -4, GOLD_CENTER_Z),
+		Color = Color3.fromRGB(242, 199, 64),
+		Material = Enum.Material.Plastic,
+		Parent = folder,
+	})
+	gold.TopSurface = Enum.SurfaceType.Studs
+	gold.Locked = true
+end
+
 -- The rebirth altar lives on the MAIN island's south edge (you must be able
 -- to rebirth before the golden island reveals itself). The client shows a
 -- confirm panel when the prompt fires.
@@ -165,7 +195,7 @@ local function buildAltar(folder)
 	altar.Name = "RebirthAltar"
 	altar.Anchored = true
 	altar.Size = Vector3.new(12, 1.2, 12)
-	altar.Position = Vector3.new(0, 0.6, -60)
+	altar.Position = Vector3.new(0, 0.6, -59)
 	altar.Color = Color3.fromRGB(255, 215, 60)
 	altar.Material = Enum.Material.Neon
 	altar.Parent = folder
@@ -180,12 +210,40 @@ local function buildAltar(folder)
 	prompt.Parent = altar
 end
 
--- Builds everything. onBuy(player, nodeId) is called when a pad prompt fires.
+local function buildPortal(folder, name, position, labelText)
+	local portal = makePart({
+		Name = name,
+		Size = Vector3.new(8, 0.6, 8),
+		CFrame = CFrame.new(position),
+		Color = Color3.fromRGB(255, 215, 60),
+		Material = Enum.Material.Neon,
+		Parent = folder,
+	})
+	local gui = Instance.new("SurfaceGui")
+	gui.Face = Enum.NormalId.Top
+	gui.SizingMode = Enum.SurfaceGuiSizingMode.PixelsPerStud
+	gui.PixelsPerStud = 25
+	gui.Parent = portal
+	local label = Instance.new("TextLabel")
+	label.BackgroundTransparency = 1
+	label.Size = UDim2.new(1, 0, 1, 0)
+	label.Rotation = 180
+	label.Font = Enum.Font.GothamBlack
+	label.TextSize = 30
+	label.TextWrapped = true
+	label.TextColor3 = Color3.fromRGB(60, 40, 0)
+	label.Text = labelText
+	label.Parent = gui
+	return portal
+end
+
+-- Builds everything. onBuy(player, nodeId) is called when a pad prompt
+-- fires; getRebirths(player) gates the golden portal server-side.
 -- Returns the TV ticker label so the server can announce big pulls on it.
-function TreeBuilder.Build(onBuy)
-	-- if this synced into an older place, clear leftover world pieces that
-	-- would sit under/over the new islands
-	for _, legacyName in { "Baseplate", "SpawnPlaza" } do
+function TreeBuilder.Build(onBuy, getRebirths)
+	-- clear world pieces from any older version of the game, no matter how
+	-- this got loaded (old file, Rojo sync into an existing place, etc.)
+	for _, legacyName in { "Baseplate", "SpawnPlaza", "MainIsland", "GoldenIsland", "RebirthBridge", "UpgradeTree" } do
 		local legacy = workspace:FindFirstChild(legacyName)
 		if legacy then
 			legacy:Destroy()
@@ -194,6 +252,8 @@ function TreeBuilder.Build(onBuy)
 
 	local folder = Instance.new("Folder")
 	folder.Name = "UpgradeTree"
+
+	buildIslands(folder)
 
 	for _, treeNode in Config.Tree do
 		buildPad(treeNode, folder, onBuy)
@@ -211,6 +271,36 @@ function TreeBuilder.Build(onBuy)
 	end
 
 	buildAltar(folder)
+
+	-- portals between the islands (golden side is rebirth-gated)
+	local toGold = buildPortal(folder, "GoldenPortal", Vector3.new(12, 0.3, -62), "⭐ GOLDEN ISLAND")
+	local toMain = buildPortal(folder, "ReturnPortal", Vector3.new(0, 0.3, GOLD_CENTER_Z + 54), "↩ BACK")
+
+	local teleportCooldown = {}
+	Players.PlayerRemoving:Connect(function(player)
+		teleportCooldown[player] = nil
+	end)
+	local function makeTeleporter(portal, destination, needsRebirth)
+		portal.Touched:Connect(function(hit)
+			local character = hit.Parent
+			local player = character and Players:GetPlayerFromCharacter(character)
+			if not player then
+				return
+			end
+			if needsRebirth and getRebirths(player) < 1 then
+				return
+			end
+			local now = os.clock()
+			if (teleportCooldown[player] or 0) > now then
+				return
+			end
+			teleportCooldown[player] = now + 2
+			character:PivotTo(CFrame.new(destination))
+		end)
+	end
+	makeTeleporter(toGold, Vector3.new(0, 4, GOLD_CENTER_Z + 44), true)
+	makeTeleporter(toMain, Vector3.new(0, 4, -50), false)
+
 	local ticker = buildTv(folder)
 	folder.Parent = workspace
 	return ticker
