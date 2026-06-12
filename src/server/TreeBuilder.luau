@@ -157,14 +157,15 @@ local function buildTv(folder)
 	return ticker
 end
 
--- The golden island's altar: walk up and trigger to rebirth (the client
--- shows a confirm panel first; the prompt itself is handled client-side).
+-- The rebirth altar lives on the MAIN island's south edge (you must be able
+-- to rebirth before the golden island reveals itself). The client shows a
+-- confirm panel when the prompt fires.
 local function buildAltar(folder)
 	local altar = Instance.new("Part")
 	altar.Name = "RebirthAltar"
 	altar.Anchored = true
 	altar.Size = Vector3.new(12, 1.2, 12)
-	altar.Position = Vector3.new(0, 0.6, -88)
+	altar.Position = Vector3.new(0, 0.6, -60)
 	altar.Color = Color3.fromRGB(255, 215, 60)
 	altar.Material = Enum.Material.Neon
 	altar.Parent = folder
@@ -182,6 +183,15 @@ end
 -- Builds everything. onBuy(player, nodeId) is called when a pad prompt fires.
 -- Returns the TV ticker label so the server can announce big pulls on it.
 function TreeBuilder.Build(onBuy)
+	-- if this synced into an older place, clear leftover world pieces that
+	-- would sit under/over the new islands
+	for _, legacyName in { "Baseplate", "SpawnPlaza" } do
+		local legacy = workspace:FindFirstChild(legacyName)
+		if legacy then
+			legacy:Destroy()
+		end
+	end
+
 	local folder = Instance.new("Folder")
 	folder.Name = "UpgradeTree"
 

@@ -660,6 +660,15 @@ function UI:BuildPadSurfaces()
 		}
 	end
 
+	-- the golden island stays hidden (and unwalkable) until your first rebirth
+	self.GoldenParts = {}
+	for _, partName in { "GoldenIsland", "RebirthBridge" } do
+		local part = workspace:FindFirstChild(partName)
+		if part and part:IsA("BasePart") then
+			table.insert(self.GoldenParts, part)
+		end
+	end
+
 	-- the rebirth altar: live progress text + client-side confirm
 	local altar = tree:WaitForChild("RebirthAltar", 10)
 	if altar then
@@ -844,11 +853,22 @@ end
 
 function UI:UpdatePads()
 	local state = self.State
+	local goldUnlocked = state.Rebirths >= 1
+
+	-- reveal/hide the golden island itself (per-player, local only)
+	if self.GoldenParts then
+		for _, part in self.GoldenParts do
+			part.LocalTransparencyModifier = if goldUnlocked then 0 else 1
+			part.CanCollide = goldUnlocked
+		end
+	end
+
 	for nodeId, entry in self.Pads do
 		local treeNode = Config.NodeById[nodeId]
 		local levels = if treeNode.IsRebirth then state.RebirthUpgrades else state.Upgrades
 		local level = levels[nodeId] or 0
-		local unlocked = not treeNode.Requires or (levels[treeNode.Requires] or 0) >= 1
+		local unlocked = (not treeNode.Requires or (levels[treeNode.Requires] or 0) >= 1)
+			and (not treeNode.IsRebirth or goldUnlocked)
 
 		setPadVisible(entry, unlocked)
 		if not unlocked then
@@ -933,6 +953,9 @@ function UI:Update(state)
 	if not self.WelcomedOnce and state.TotalRolls == 0 then
 		self.WelcomedOnce = true
 		self:ShowTicker("👇 Press ROLL to pull your first card!")
+	end
+	if previous and state.Rebirths > previous.Rebirths then
+		self:ShowTicker("🌟 The Golden Island has revealed itself! Cross the bridge behind the altar →")
 	end
 
 	if previous then

@@ -214,25 +214,25 @@ local function rnode(def)
 end
 
 -- row 1 (z -104)
-rnode({ Id = "carddouble", Name = "Card Doubler", Desc = "2x cards from every roll", Pos = { -45, -104 }, Cost = 3 })
-rnode({ Id = "goldinc", Name = "Golden Income", Desc = "x3 ALL coin earnings, forever", Pos = { -15, -104 }, Cost = 2, CostMult = 1.7, MaxLevel = nil })
-rnode({ Id = "eternalluck", Name = "Eternal Luck", Desc = "+10% rare pool chance, forever", Pos = { 15, -104 }, Cost = 2, CostMult = 1.8, MaxLevel = nil })
-rnode({ Id = "quickstart", Name = "Quick Start", Desc = "+10K starting coins after rebirth", Pos = { 45, -104 }, Cost = 1, CostMult = 2, MaxLevel = nil })
+rnode({ Id = "carddouble", Name = "Card Doubler", Desc = "2x cards from every roll", Pos = { -45, -124 }, Cost = 3 })
+rnode({ Id = "goldinc", Name = "Golden Income", Desc = "x3 ALL coin earnings, forever", Pos = { -15, -124 }, Cost = 2, CostMult = 1.7, MaxLevel = nil })
+rnode({ Id = "eternalluck", Name = "Eternal Luck", Desc = "+10% rare pool chance, forever", Pos = { 15, -124 }, Cost = 2, CostMult = 1.8, MaxLevel = nil })
+rnode({ Id = "quickstart", Name = "Quick Start", Desc = "+10K starting coins after rebirth", Pos = { 45, -124 }, Cost = 1, CostMult = 2, MaxLevel = nil })
 -- row 2 (z -120)
-rnode({ Id = "cardquad", Name = "Card Quadrupler", Desc = "2x cards AGAIN (4x total)", Pos = { -45, -120 }, Cost = 8, Requires = "carddouble" })
-rnode({ Id = "timelord", Name = "Time Lord", Desc = "Roll cooldown x0.6", Pos = { -15, -120 }, Cost = 4 })
-rnode({ Id = "bigbag", Name = "Bottomless Bag", Desc = "+30 backpack capacity", Pos = { 15, -120 }, Cost = 2, CostMult = 1.6, MaxLevel = nil })
-rnode({ Id = "dupegold", Name = "Dupe Tycoon", Desc = "+100% dupe & sell value", Pos = { 45, -120 }, Cost = 2, CostMult = 1.7, MaxLevel = nil })
+rnode({ Id = "cardquad", Name = "Card Quadrupler", Desc = "2x cards AGAIN (4x total)", Pos = { -45, -140 }, Cost = 8, Requires = "carddouble" })
+rnode({ Id = "timelord", Name = "Time Lord", Desc = "Roll cooldown x0.6", Pos = { -15, -140 }, Cost = 4 })
+rnode({ Id = "bigbag", Name = "Bottomless Bag", Desc = "+30 backpack capacity", Pos = { 15, -140 }, Cost = 2, CostMult = 1.6, MaxLevel = nil })
+rnode({ Id = "dupegold", Name = "Dupe Tycoon", Desc = "+100% dupe & sell value", Pos = { 45, -140 }, Cost = 2, CostMult = 1.7, MaxLevel = nil })
 -- row 3 (z -136)
-rnode({ Id = "overdrive", Name = "Scanner Overdrive", Desc = "Fresh accounts found 2x faster", Pos = { -45, -136 }, Cost = 3 })
-rnode({ Id = "chrono", Name = "Chrono Master", Desc = "Auto-roll cooldown x0.6", Pos = { -15, -136 }, Cost = 4, Requires = "timelord" })
-rnode({ Id = "slotmaster", Name = "Slot Master", Desc = "+1 equip slot", Pos = { 15, -136 }, Cost = 4, CostMult = 1.8, MaxLevel = nil })
-rnode({ Id = "luckyseven", Name = "Lucky Sevens", Desc = "Every 7th roll is Rare or better", Pos = { 45, -136 }, Cost = 6 })
+rnode({ Id = "overdrive", Name = "Scanner Overdrive", Desc = "Fresh accounts found 2x faster", Pos = { -45, -156 }, Cost = 3 })
+rnode({ Id = "chrono", Name = "Chrono Master", Desc = "Auto-roll cooldown x0.6", Pos = { -15, -156 }, Cost = 4, Requires = "timelord" })
+rnode({ Id = "slotmaster", Name = "Slot Master", Desc = "+1 equip slot", Pos = { 15, -156 }, Cost = 4, CostMult = 1.8, MaxLevel = nil })
+rnode({ Id = "luckyseven", Name = "Lucky Sevens", Desc = "Every 7th roll is Rare or better", Pos = { 45, -156 }, Cost = 6 })
 -- row 4 (z -152)
-rnode({ Id = "tokenhoard", Name = "Token Hoarder", Desc = "+1 token from every rebirth", Pos = { -45, -152 }, Cost = 12, MaxLevel = 2, CostMult = 1 })
-rnode({ Id = "keeper", Name = "Legendary Keeper", Desc = "Legendary cards survive rebirth", Pos = { -15, -152 }, Cost = 10 })
-rnode({ Id = "godmagnet", Name = "God Magnet", Desc = "3x chance to roll a legend", Pos = { 15, -152 }, Cost = 5 })
-rnode({ Id = "dreamprofit", Name = "Dream Profits", Desc = "Offline earnings: full rate, 24h cap", Pos = { 45, -152 }, Cost = 5 })
+rnode({ Id = "tokenhoard", Name = "Token Hoarder", Desc = "+1 token from every rebirth", Pos = { -45, -172 }, Cost = 12, MaxLevel = 2, CostMult = 1 })
+rnode({ Id = "keeper", Name = "Legendary Keeper", Desc = "Legendary cards survive rebirth", Pos = { -15, -172 }, Cost = 10 })
+rnode({ Id = "godmagnet", Name = "God Magnet", Desc = "3x chance to roll a legend", Pos = { 15, -172 }, Cost = 5 })
+rnode({ Id = "dreamprofit", Name = "Dream Profits", Desc = "Offline earnings: full rate, 24h cap", Pos = { 45, -172 }, Cost = 5 })
 
 Config.RebirthTree = R
 
@@ -2129,14 +2129,15 @@ local function buildTv(folder)
 	return ticker
 end
 
--- The golden island's altar: walk up and trigger to rebirth (the client
--- shows a confirm panel first; the prompt itself is handled client-side).
+-- The rebirth altar lives on the MAIN island's south edge (you must be able
+-- to rebirth before the golden island reveals itself). The client shows a
+-- confirm panel when the prompt fires.
 local function buildAltar(folder)
 	local altar = Instance.new("Part")
 	altar.Name = "RebirthAltar"
 	altar.Anchored = true
 	altar.Size = Vector3.new(12, 1.2, 12)
-	altar.Position = Vector3.new(0, 0.6, -88)
+	altar.Position = Vector3.new(0, 0.6, -60)
 	altar.Color = Color3.fromRGB(255, 215, 60)
 	altar.Material = Enum.Material.Neon
 	altar.Parent = folder
@@ -2154,6 +2155,15 @@ end
 -- Builds everything. onBuy(player, nodeId) is called when a pad prompt fires.
 -- Returns the TV ticker label so the server can announce big pulls on it.
 function TreeBuilder.Build(onBuy)
+	-- if this synced into an older place, clear leftover world pieces that
+	-- would sit under/over the new islands
+	for _, legacyName in { "Baseplate", "SpawnPlaza" } do
+		local legacy = workspace:FindFirstChild(legacyName)
+		if legacy then
+			legacy:Destroy()
+		end
+	end
+
 	local folder = Instance.new("Folder")
 	folder.Name = "UpgradeTree"
 
@@ -3387,6 +3397,15 @@ function UI:BuildPadSurfaces()
 		}
 	end
 
+	-- the golden island stays hidden (and unwalkable) until your first rebirth
+	self.GoldenParts = {}
+	for _, partName in { "GoldenIsland", "RebirthBridge" } do
+		local part = workspace:FindFirstChild(partName)
+		if part and part:IsA("BasePart") then
+			table.insert(self.GoldenParts, part)
+		end
+	end
+
 	-- the rebirth altar: live progress text + client-side confirm
 	local altar = tree:WaitForChild("RebirthAltar", 10)
 	if altar then
@@ -3571,11 +3590,22 @@ end
 
 function UI:UpdatePads()
 	local state = self.State
+	local goldUnlocked = state.Rebirths >= 1
+
+	-- reveal/hide the golden island itself (per-player, local only)
+	if self.GoldenParts then
+		for _, part in self.GoldenParts do
+			part.LocalTransparencyModifier = if goldUnlocked then 0 else 1
+			part.CanCollide = goldUnlocked
+		end
+	end
+
 	for nodeId, entry in self.Pads do
 		local treeNode = Config.NodeById[nodeId]
 		local levels = if treeNode.IsRebirth then state.RebirthUpgrades else state.Upgrades
 		local level = levels[nodeId] or 0
-		local unlocked = not treeNode.Requires or (levels[treeNode.Requires] or 0) >= 1
+		local unlocked = (not treeNode.Requires or (levels[treeNode.Requires] or 0) >= 1)
+			and (not treeNode.IsRebirth or goldUnlocked)
 
 		setPadVisible(entry, unlocked)
 		if not unlocked then
@@ -3660,6 +3690,9 @@ function UI:Update(state)
 	if not self.WelcomedOnce and state.TotalRolls == 0 then
 		self.WelcomedOnce = true
 		self:ShowTicker("👇 Press ROLL to pull your first card!")
+	end
+	if previous and state.Rebirths > previous.Rebirths then
+		self:ShowTicker("🌟 The Golden Island has revealed itself! Cross the bridge behind the altar →")
 	end
 
 	if previous then
@@ -3749,12 +3782,12 @@ return UI
         <Vector3 name="Position">
           <X>0</X>
           <Y>-4</Y>
-          <Z>-123</Z>
+          <Z>-160</Z>
         </Vector3>
         <Vector3 name="size">
           <X>130</X>
           <Y>8</Y>
-          <Z>100</Z>
+          <Z>120</Z>
         </Vector3>
         <token name="TopSurface">3</token>
       </Properties>
@@ -3791,12 +3824,12 @@ return UI
         <Vector3 name="Position">
           <X>0</X>
           <Y>-0.5</Y>
-          <Z>-69</Z>
+          <Z>-83.5</Z>
         </Vector3>
         <Vector3 name="size">
           <X>10</X>
           <Y>1</Y>
-          <Z>16</Z>
+          <Z>33</Z>
         </Vector3>
         <token name="TopSurface">0</token>
         <float name="Transparency">0.15</float>

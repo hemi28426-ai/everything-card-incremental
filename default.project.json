@@ -42,8 +42,8 @@
         "$properties": {
           "Anchored": true,
           "Locked": true,
-          "Size": [130, 8, 100],
-          "Position": [0, -4, -123],
+          "Size": [130, 8, 120],
+          "Position": [0, -4, -160],
           "Color": [0.95, 0.78, 0.25],
           "Material": "Plastic",
           "TopSurface": "Studs",
@@ -55,8 +55,8 @@
         "$properties": {
           "Anchored": true,
           "Locked": true,
-          "Size": [10, 1, 16],
-          "Position": [0, -0.5, -69],
+          "Size": [10, 1, 33],
+          "Position": [0, -0.5, -83.5],
           "Color": [1, 0.84, 0.35],
           "Material": "Neon",
           "Transparency": 0.15,
