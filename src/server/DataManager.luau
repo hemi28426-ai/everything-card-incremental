@@ -7,7 +7,7 @@ local DataStoreService = game:GetService("DataStoreService")
 
 local DataManager = {}
 
-local STORE_NAME = "PlayerData_v1"
+local STORE_NAME = "ECIPlayerData_v1"
 local KEY_PREFIX = "player_"
 local RETRIES = 3
 
@@ -19,22 +19,28 @@ do
 	if ok then
 		store = result
 	else
-		warn("[ClickEmpire] DataStores unavailable — progress will NOT save. " ..
+		warn("[ECI] DataStores unavailable — progress will NOT save. " ..
 			"(Normal in Studio until the game is published with API access enabled.) " .. tostring(result))
 	end
 end
 
 local DEFAULT_DATA = {
-	Cash = 0,
+	Coins = 0,
 	TotalEarned = 0,
-	TotalClicks = 0,
-	Rebirths = 0,
-	Upgrades = {}, -- map of upgrade id -> amount owned
+	TotalRolls = 0,
+	BestTier = 0, -- highest tier index ever pulled
+	Upgrades = {}, -- nodeId -> level
+	Cards = {}, -- userId (as string) -> {Name, DisplayName, Tier, Boost, Traits, Flavor?, Count}
+	Equipped = {}, -- array of userId strings
+	AutoOn = true,
+	LastSeen = 0,
 }
 
 function DataManager.NewDefault()
 	local data = table.clone(DEFAULT_DATA)
 	data.Upgrades = {}
+	data.Cards = {}
+	data.Equipped = {}
 	return data
 end
 
@@ -52,7 +58,6 @@ function DataManager.Load(player)
 		end)
 		if ok then
 			if type(result) == "table" then
-				-- fill in any fields added to the game since this player last played
 				for field, defaultValue in DEFAULT_DATA do
 					if result[field] == nil then
 						result[field] = if type(defaultValue) == "table" then {} else defaultValue
@@ -67,7 +72,7 @@ function DataManager.Load(player)
 		end
 	end
 
-	warn(("[ClickEmpire] Failed to load data for %s — playing without saving this session"):format(player.Name))
+	warn(("[ECI] Failed to load data for %s — playing without saving this session"):format(player.Name))
 	return DataManager.NewDefault(), false
 end
 
@@ -76,6 +81,7 @@ function DataManager.Save(player, data)
 		return false
 	end
 
+	data.LastSeen = os.time()
 	local key = KEY_PREFIX .. player.UserId
 	for attempt = 1, RETRIES do
 		local ok = pcall(function()
@@ -91,7 +97,7 @@ function DataManager.Save(player, data)
 		end
 	end
 
-	warn(("[ClickEmpire] Failed to save data for %s"):format(player.Name))
+	warn(("[ECI] Failed to save data for %s"):format(player.Name))
 	return false
 end
 

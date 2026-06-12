@@ -1,5 +1,5 @@
 {
-  "name": "ClickEmpire",
+  "name": "EverythingCards",
   "tree": {
     "$className": "DataModel",
 
@@ -31,7 +31,7 @@
           "Locked": true,
           "Size": [512, 16, 512],
           "Position": [0, -8, 0],
-          "Color": [0.22, 0.23, 0.28],
+          "Color": [0.13, 0.11, 0.19],
           "Material": "Slate",
           "TopSurface": "Smooth",
           "BottomSurface": "Smooth"
@@ -44,7 +44,7 @@
           "Size": [12, 1, 12],
           "Position": [0, 0.5, 0],
           "Duration": 0,
-          "Color": [1, 0.78, 0.25],
+          "Color": [0.59, 0.35, 1],
           "Material": "SmoothPlastic",
           "TopSurface": "Smooth"
         }
@@ -53,8 +53,8 @@
 
     "Lighting": {
       "$properties": {
-        "Brightness": 3,
-        "ClockTime": 14.5
+        "Brightness": 2.5,
+        "ClockTime": 17.8
       }
     }
   }

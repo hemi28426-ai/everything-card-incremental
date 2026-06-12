@@ -1,0 +1,2871 @@
+<roblox version="4">
+  <Item class="Lighting" referent="0">
+    <Properties>
+      <string name="Name">Lighting</string>
+      <float name="Brightness">2.5</float>
+      <float name="ClockTime">17.8</float>
+    </Properties>
+  </Item>
+  <Item class="ReplicatedStorage" referent="1">
+    <Properties>
+      <string name="Name">ReplicatedStorage</string>
+    </Properties>
+    <Item class="Folder" referent="2">
+      <Properties>
+        <string name="Name">Shared</string>
+      </Properties>
+      <Item class="ModuleScript" referent="3">
+        <Properties>
+          <string name="Name">Config</string>
+          <string name="Source"><![CDATA[-- Everything Card Incremental — all game tuning in one file.
+-- Tiers, the legends list, the upgrade tree, roll pacing: edit freely.
+
+local Config = {}
+
+Config.GameName = "Everything Card Incremental"
+
+-- ===== Cards / tiers =======================================================
+-- Order matters: index = rarity rank (higher = rarer).
+Config.Tiers = {
+	{ Name = "Common", Color = Color3.fromRGB(160, 165, 180), Boost = 1, SellValue = 5 },
+	{ Name = "Uncommon", Color = Color3.fromRGB(95, 205, 120), Boost = 4, SellValue = 25 },
+	{ Name = "Rare", Color = Color3.fromRGB(80, 150, 255), Boost = 15, SellValue = 150 },
+	{ Name = "Legendary", Color = Color3.fromRGB(255, 160, 50), Boost = 75, SellValue = 2500 },
+	{ Name = "Mythic", Color = Color3.fromRGB(255, 80, 140), Boost = 400, SellValue = 25000 },
+	{ Name = "God", Color = Color3.fromRGB(255, 215, 60), Boost = 2000, SellValue = 250000 },
+	{ Name = "Secret", Color = Color3.fromRGB(255, 40, 60), Boost = 9999, SellValue = 1000000 },
+}
+Config.TierByName = {}
+for index, tier in Config.Tiers do
+	tier.Index = index
+	Config.TierByName[tier.Name] = tier
+end
+
+-- Famous accounts. Usernames get resolved to user ids at server startup, so
+-- you can add anyone here; KnownId is just a fallback if resolution fails.
+Config.Legends = {
+	{ Username = "Roblox", KnownId = 1, Tier = "Secret", Flavor = "You rolled the corporate mainframe. Reality is collapsing." },
+	{ Username = "builderman", KnownId = 156, Tier = "God", Flavor = "The original architect. Check your messages." },
+	{ Username = "Shedletsky", KnownId = 261, Tier = "God", Flavor = "Sword fights on the heights, forever." },
+	{ Username = "Hazem", Tier = "God", Flavor = "PLS DONATE. The clout is immeasurable." },
+	{ Username = "DavidBaszucki", Tier = "God", Flavor = "The CEO of imagination itself." },
+}
+
+-- ===== Rolling =============================================================
+Config.Roll = {
+	BaseCooldown = 3.0, -- seconds between manual rolls
+	MinCooldown = 0.3,
+	BaseAutoCooldown = 6.0,
+	MinAutoCooldown = 0.5,
+	BaseLuckChance = 0.02, -- chance a roll draws from the discovered rare pool
+	MaxLuckChance = 0.6,
+	BaseGodChance = 1 / 5000, -- chance a roll hits the legends list
+	BaseFreshInterval = 4.0, -- seconds between background account scans
+	MaxUserId = 8_500_000_000, -- rough top of the current id space
+	BufferTarget = 12, -- scanned cards kept ready per server
+}
+
+-- Random ids are sampled from these ranges (older accounts are rarer rolls).
+Config.IdRanges = {
+	{ Min = 1_000_000_000, Max = Config.Roll.MaxUserId, Weight = 70 },
+	{ Min = 100_000_000, Max = 1_000_000_000, Weight = 15 },
+	{ Min = 1_000_000, Max = 100_000_000, Weight = 10 },
+	{ Min = 10_000, Max = 1_000_000, Weight = 4 },
+	{ Min = 1, Max = 10_000, Weight = 1 },
+}
+
+Config.Economy = {
+	BaseRate = 1, -- coins per second before any cards
+	BaseEquipSlots = 3,
+	OfflineCapHours = 8,
+	OfflineFraction = 0.5, -- offline earnings run at half speed
+}
+
+Config.AutosaveInterval = 60
+Config.LeaderboardRefreshInterval = 60
+Config.LeaderboardSize = 10
+
+-- ===== Upgrade tree ========================================================
+-- Each node becomes a physical pad in the world at Pos = {x, z}.
+-- MaxLevel = nil means infinitely repeatable (cost compounds by CostMult).
+-- Requires = id of the pad that must be owned first (also draws the path).
+local T = {}
+local function node(def)
+	table.insert(T, def)
+end
+
+-- Rolling branch (west, purple)
+node({ Id = "rs1", Name = "Roll Speed I", Desc = "-0.5s roll cooldown", Branch = "Rolling", Pos = { -18, 6 }, Cost = 50, Effect = "RollSpeed", Value = -0.5 })
+node({ Id = "rs2", Name = "Roll Speed II", Desc = "-0.5s roll cooldown", Branch = "Rolling", Pos = { -30, 6 }, Cost = 250, Effect = "RollSpeed", Value = -0.5, Requires = "rs1" })
+node({ Id = "rs3", Name = "Roll Speed III", Desc = "-0.5s roll cooldown", Branch = "Rolling", Pos = { -42, 6 }, Cost = 1000, Effect = "RollSpeed", Value = -0.5, Requires = "rs2" })
+node({ Id = "rs4", Name = "Roll Speed IV", Desc = "-0.5s roll cooldown", Branch = "Rolling", Pos = { -54, 6 }, Cost = 5000, Effect = "RollSpeed", Value = -0.5, Requires = "rs3" })
+node({ Id = "rs5", Name = "Roll Speed V", Desc = "-0.5s roll cooldown", Branch = "Rolling", Pos = { -66, 6 }, Cost = 25000, Effect = "RollSpeed", Value = -0.5, Requires = "rs4" })
+node({ Id = "multi2", Name = "Multi-Roll x2", Desc = "2 cards per roll", Branch = "Rolling", Pos = { -18, -8 }, Cost = 500, Effect = "MultiRoll", Value = 2, Requires = "rs1" })
+node({ Id = "multi3", Name = "Multi-Roll x3", Desc = "3 cards per roll", Branch = "Rolling", Pos = { -30, -8 }, Cost = 10000, Effect = "MultiRoll", Value = 3, Requires = "multi2" })
+node({ Id = "multi5", Name = "Multi-Roll x5", Desc = "5 cards per roll", Branch = "Rolling", Pos = { -42, -8 }, Cost = 200000, Effect = "MultiRoll", Value = 5, Requires = "multi3" })
+node({ Id = "auto", Name = "Auto-Roller", Desc = "Rolls happen automatically", Branch = "Rolling", Pos = { -18, 20 }, Cost = 2000, Effect = "AutoUnlock", Requires = "rs1" })
+node({ Id = "as1", Name = "Auto Speed I", Desc = "-1.5s auto cooldown", Branch = "Rolling", Pos = { -30, 20 }, Cost = 5000, Effect = "AutoSpeed", Value = -1.5, Requires = "auto" })
+node({ Id = "as2", Name = "Auto Speed II", Desc = "-1.5s auto cooldown", Branch = "Rolling", Pos = { -42, 20 }, Cost = 25000, Effect = "AutoSpeed", Value = -1.5, Requires = "as1" })
+node({ Id = "as3", Name = "Auto Speed III", Desc = "-1.5s auto cooldown", Branch = "Rolling", Pos = { -54, 20 }, Cost = 100000, Effect = "AutoSpeed", Value = -1.5, Requires = "as2" })
+node({ Id = "automulti", Name = "Auto Multi-Roll", Desc = "Auto rolls use your multi-roll", Branch = "Rolling", Pos = { -66, 20 }, Cost = 500000, Effect = "AutoMulti", Requires = "as3" })
+
+-- Luck branch (north, green)
+node({ Id = "luck1", Name = "Luck I", Desc = "+2% rare pool chance", Branch = "Luck", Pos = { 0, 18 }, Cost = 100, Effect = "Luck", Value = 0.02 })
+node({ Id = "luck2", Name = "Luck II", Desc = "+2% rare pool chance", Branch = "Luck", Pos = { 0, 30 }, Cost = 1000, Effect = "Luck", Value = 0.02, Requires = "luck1" })
+node({ Id = "luck3", Name = "Luck III", Desc = "+2% rare pool chance", Branch = "Luck", Pos = { 0, 42 }, Cost = 10000, Effect = "Luck", Value = 0.02, Requires = "luck2" })
+node({ Id = "luck4", Name = "Luck IV", Desc = "+2% rare pool chance", Branch = "Luck", Pos = { 0, 54 }, Cost = 100000, Effect = "Luck", Value = 0.02, Requires = "luck3" })
+node({ Id = "luck5", Name = "Luck V", Desc = "+2% rare pool chance", Branch = "Luck", Pos = { 0, 66 }, Cost = 1000000, Effect = "Luck", Value = 0.02, Requires = "luck4" })
+node({ Id = "fs1", Name = "Fresh Scans I", Desc = "New accounts found faster", Branch = "Luck", Pos = { -14, 30 }, Cost = 5000, Effect = "FreshScan", Value = -1.25, Requires = "luck2" })
+node({ Id = "fs2", Name = "Fresh Scans II", Desc = "New accounts found faster", Branch = "Luck", Pos = { -14, 42 }, Cost = 50000, Effect = "FreshScan", Value = -1.25, Requires = "fs1" })
+node({ Id = "god", Name = "God Hunter", Desc = "3x chance to roll a legend", Branch = "Luck", Pos = { 14, 54 }, Cost = 250000, Effect = "GodHunter", Value = 3, Requires = "luck4" })
+
+-- Economy branch (east, gold)
+node({ Id = "coin1", Name = "Coins I", Desc = "x1.5 coin earnings", Branch = "Economy", Pos = { 18, 6 }, Cost = 200, Effect = "CoinMult", Value = 1.5 })
+node({ Id = "coin2", Name = "Coins II", Desc = "x1.5 coin earnings", Branch = "Economy", Pos = { 30, 6 }, Cost = 2000, Effect = "CoinMult", Value = 1.5, Requires = "coin1" })
+node({ Id = "coin3", Name = "Coins III", Desc = "x1.5 coin earnings", Branch = "Economy", Pos = { 42, 6 }, Cost = 20000, Effect = "CoinMult", Value = 1.5, Requires = "coin2" })
+node({ Id = "coin4", Name = "Coins IV", Desc = "x1.5 coin earnings", Branch = "Economy", Pos = { 54, 6 }, Cost = 200000, Effect = "CoinMult", Value = 1.5, Requires = "coin3" })
+node({ Id = "coin5", Name = "Coins V", Desc = "x1.5 coin earnings", Branch = "Economy", Pos = { 66, 6 }, Cost = 2000000, Effect = "CoinMult", Value = 1.5, Requires = "coin4" })
+node({ Id = "slot1", Name = "Equip Slot +1", Desc = "Equip one more card", Branch = "Economy", Pos = { 18, 20 }, Cost = 300, Effect = "Slot", Value = 1, Requires = "coin1" })
+node({ Id = "slot2", Name = "Equip Slot +1", Desc = "Equip one more card", Branch = "Economy", Pos = { 30, 20 }, Cost = 5000, Effect = "Slot", Value = 1, Requires = "slot1" })
+node({ Id = "slot3", Name = "Equip Slot +1", Desc = "Equip one more card", Branch = "Economy", Pos = { 42, 20 }, Cost = 75000, Effect = "Slot", Value = 1, Requires = "slot2" })
+node({ Id = "slot4", Name = "Equip Slot +1", Desc = "Equip one more card", Branch = "Economy", Pos = { 54, 20 }, Cost = 1000000, Effect = "Slot", Value = 1, Requires = "slot3" })
+node({ Id = "dupe1", Name = "Dupe Value I", Desc = "+50% coins from selling dupes", Branch = "Economy", Pos = { 18, -8 }, Cost = 1000, Effect = "DupeValue", Value = 0.5, Requires = "coin1" })
+node({ Id = "dupe2", Name = "Dupe Value II", Desc = "+50% coins from selling dupes", Branch = "Economy", Pos = { 30, -8 }, Cost = 20000, Effect = "DupeValue", Value = 0.5, Requires = "dupe1" })
+node({ Id = "dupe3", Name = "Dupe Value III", Desc = "+50% coins from selling dupes", Branch = "Economy", Pos = { 42, -8 }, Cost = 400000, Effect = "DupeValue", Value = 0.5, Requires = "dupe2" })
+node({ Id = "offline", Name = "Offline Earnings", Desc = "Earn while away (half rate, 8h cap)", Branch = "Economy", Pos = { 54, -8 }, Cost = 50000, Effect = "Offline", Requires = "coin3" })
+
+-- Endgame zone (south, magenta) — infinitely repeatable, compounding costs
+node({ Id = "infcoin", Name = "∞ Coin Boost", Desc = "x1.1 coins, forever", Branch = "Endgame", Pos = { -21, -48 }, Cost = 100000, CostMult = 1.5, MaxLevel = nil, Effect = "InfCoin", Value = 1.1 })
+node({ Id = "influck", Name = "∞ Luck", Desc = "+0.5% rare pool chance, forever", Branch = "Endgame", Pos = { -7, -48 }, Cost = 250000, CostMult = 1.6, MaxLevel = nil, Effect = "InfLuck", Value = 0.005 })
+node({ Id = "infhaste", Name = "∞ Roll Haste", Desc = "x0.97 roll cooldown, forever", Branch = "Endgame", Pos = { 7, -48 }, Cost = 500000, CostMult = 1.7, MaxLevel = nil, Effect = "InfHaste", Value = 0.97 })
+node({ Id = "infauto", Name = "∞ Auto Efficiency", Desc = "x0.97 auto cooldown, forever", Branch = "Endgame", Pos = { 21, -48 }, Cost = 750000, CostMult = 1.7, MaxLevel = nil, Effect = "InfAuto", Value = 0.97 })
+
+Config.Tree = T
+Config.NodeById = {}
+for _, treeNode in Config.Tree do
+	if treeNode.MaxLevel == nil and treeNode.CostMult == nil then
+		treeNode.MaxLevel = 1 -- plain nodes are one-time purchases
+	end
+	Config.NodeById[treeNode.Id] = treeNode
+end
+
+Config.BranchColors = {
+	Rolling = Color3.fromRGB(140, 100, 255),
+	Luck = Color3.fromRGB(90, 210, 120),
+	Economy = Color3.fromRGB(255, 190, 60),
+	Endgame = Color3.fromRGB(230, 60, 200),
+}
+
+function Config.GetNodeCost(treeNode, level)
+	return math.floor(treeNode.Cost * (treeNode.CostMult or 1) ^ level)
+end
+
+-- Turns a player's owned upgrade levels into their effective stats.
+function Config.ComputeStats(upgrades)
+	local stats = {
+		RollCooldown = Config.Roll.BaseCooldown,
+		MultiRoll = 1,
+		AutoUnlocked = false,
+		AutoCooldown = Config.Roll.BaseAutoCooldown,
+		AutoMulti = false,
+		LuckChance = Config.Roll.BaseLuckChance,
+		GodChance = Config.Roll.BaseGodChance,
+		FreshInterval = Config.Roll.BaseFreshInterval,
+		CoinMult = 1,
+		EquipSlots = Config.Economy.BaseEquipSlots,
+		DupeMult = 1,
+		OfflineUnlocked = false,
+	}
+	for _, treeNode in Config.Tree do
+		local level = upgrades[treeNode.Id] or 0
+		if level > 0 then
+			local effect = treeNode.Effect
+			if effect == "RollSpeed" then
+				stats.RollCooldown += treeNode.Value * level
+			elseif effect == "MultiRoll" then
+				stats.MultiRoll = math.max(stats.MultiRoll, treeNode.Value)
+			elseif effect == "AutoUnlock" then
+				stats.AutoUnlocked = true
+			elseif effect == "AutoSpeed" then
+				stats.AutoCooldown += treeNode.Value * level
+			elseif effect == "AutoMulti" then
+				stats.AutoMulti = true
+			elseif effect == "Luck" then
+				stats.LuckChance += treeNode.Value * level
+			elseif effect == "GodHunter" then
+				stats.GodChance *= treeNode.Value
+			elseif effect == "FreshScan" then
+				stats.FreshInterval += treeNode.Value * level
+			elseif effect == "CoinMult" then
+				stats.CoinMult *= treeNode.Value ^ level
+			elseif effect == "Slot" then
+				stats.EquipSlots += treeNode.Value * level
+			elseif effect == "DupeValue" then
+				stats.DupeMult += treeNode.Value * level
+			elseif effect == "Offline" then
+				stats.OfflineUnlocked = true
+			elseif effect == "InfCoin" then
+				stats.CoinMult *= treeNode.Value ^ level
+			elseif effect == "InfLuck" then
+				stats.LuckChance += treeNode.Value * level
+			elseif effect == "InfHaste" then
+				stats.RollCooldown *= treeNode.Value ^ level
+			elseif effect == "InfAuto" then
+				stats.AutoCooldown *= treeNode.Value ^ level
+			end
+		end
+	end
+	stats.RollCooldown = math.max(stats.RollCooldown, Config.Roll.MinCooldown)
+	stats.AutoCooldown = math.max(stats.AutoCooldown, Config.Roll.MinAutoCooldown)
+	stats.LuckChance = math.min(stats.LuckChance, Config.Roll.MaxLuckChance)
+	stats.FreshInterval = math.max(stats.FreshInterval, 1)
+	return stats
+end
+
+return Config
+]]></string>
+        </Properties>
+      </Item>
+      <Item class="ModuleScript" referent="4">
+        <Properties>
+          <string name="Name">Format</string>
+          <string name="Source"><![CDATA[-- Formats big numbers the way incremental games do: 1532 -> "1.53K", 2.4e9 -> "2.4B"
+
+local SUFFIXES = { "", "K", "M", "B", "T", "Qa", "Qi", "Sx", "Sp", "Oc", "No", "Dc" }
+
+local function format(n: number): string
+	n = math.floor(n + 0.5)
+	if n < 0 then
+		return "-" .. format(-n)
+	end
+	if n < 1000 then
+		return tostring(n)
+	end
+
+	local index = math.min(math.floor(math.log10(n) / 3), #SUFFIXES - 1)
+	local scaled = n / 10 ^ (index * 3)
+
+	local text
+	if scaled >= 100 then
+		text = string.format("%.0f", scaled)
+	elseif scaled >= 10 then
+		text = string.format("%.1f", scaled)
+	else
+		text = string.format("%.2f", scaled)
+	end
+
+	-- trim trailing zeros: "1.50" -> "1.5", "2.00" -> "2"
+	text = text:gsub("%.0+$", ""):gsub("(%.%d-)0+$", "%1")
+
+	return text .. SUFFIXES[index + 1]
+end
+
+return format
+]]></string>
+        </Properties>
+      </Item>
+    </Item>
+  </Item>
+  <Item class="ServerScriptService" referent="5">
+    <Properties>
+      <string name="Name">ServerScriptService</string>
+    </Properties>
+    <Item class="Folder" referent="6">
+      <Properties>
+        <string name="Name">Server</string>
+      </Properties>
+      <Item class="ModuleScript" referent="7">
+        <Properties>
+          <string name="Name">CardPool</string>
+          <string name="Source"><![CDATA[-- Keeps rolls instant and the card supply endless:
+--   * a buffer of freshly scanned random accounts, refilled in the background
+--   * a global pool (DataStore) of every Rare+ account any server discovered,
+--     shared across all servers — luck upgrades draw from here
+--   * the legends list (resolved from usernames at startup) for god rolls
+--   * an offline stub mode so the game is fully testable in Studio
+--     with no internet APIs at all
+
+local DataStoreService = game:GetService("DataStoreService")
+local Players = game:GetService("Players")
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
+
+local Shared = ReplicatedStorage:WaitForChild("Shared")
+local Config = require(Shared:WaitForChild("Config"))
+local Scanner = require(script.Parent:WaitForChild("Scanner"))
+
+local CardPool = {}
+
+local POOL_KEY = "RarePool_v1"
+local POOL_CAP = 300
+local POOL_READ_INTERVAL = 120
+local POOL_FLUSH_INTERVAL = 60
+local OFFLINE_AFTER_FAILURES = 3
+
+local poolStore = nil
+pcall(function()
+	poolStore = DataStoreService:GetDataStore("ECISharedPool_v1")
+end)
+
+local buffer = {} -- scanned cards ready to be rolled
+local scanCache = {} -- userId -> card (everything scanned this server session)
+local rarePool = {} -- tierName -> {card, ...} (merged from the global store)
+local pendingSubmits = {} -- discovered Rare+ cards not yet flushed to the store
+local legendCards = {}
+local consecutiveLookupFailures = 0
+local offlineMode = false
+local statsProvider = nil -- set by Init; returns the best FreshInterval online
+
+local TIER_POOL_WEIGHTS = { Rare = 70, Legendary = 25, Mythic = 5 }
+local OFFLINE_TIER_WEIGHTS = {
+	{ Tier = "Common", Weight = 70 },
+	{ Tier = "Uncommon", Weight = 20 },
+	{ Tier = "Rare", Weight = 8 },
+	{ Tier = "Legendary", Weight = 1.7 },
+	{ Tier = "Mythic", Weight = 0.3 },
+}
+
+-- ===== random account ids ==================================================
+
+local function randomUserId()
+	local totalWeight = 0
+	for _, range in Config.IdRanges do
+		totalWeight += range.Weight
+	end
+	local pick = math.random() * totalWeight
+	for _, range in Config.IdRanges do
+		pick -= range.Weight
+		if pick <= 0 then
+			return math.floor(range.Min + math.random() * (range.Max - range.Min))
+		end
+	end
+	return math.floor(math.random() * Config.Roll.MaxUserId) + 1
+end
+
+-- ===== global pool (DataStore) =============================================
+
+local function rememberPoolCard(card)
+	local list = rarePool[card.Tier]
+	if not list then
+		list = {}
+		rarePool[card.Tier] = list
+	end
+	for _, existing in list do
+		if existing.UserId == card.UserId then
+			return
+		end
+	end
+	table.insert(list, card)
+end
+
+local function readGlobalPool()
+	if not poolStore then
+		return
+	end
+	pcall(function()
+		local stored = poolStore:GetAsync(POOL_KEY)
+		if type(stored) == "table" and type(stored.Cards) == "table" then
+			for _, card in stored.Cards do
+				if type(card) == "table" and card.UserId and card.Tier then
+					rememberPoolCard(card)
+				end
+			end
+		end
+	end)
+end
+
+local function flushSubmits()
+	if not poolStore or #pendingSubmits == 0 then
+		return
+	end
+	local toAdd = pendingSubmits
+	pendingSubmits = {}
+	pcall(function()
+		poolStore:UpdateAsync(POOL_KEY, function(stored)
+			if type(stored) ~= "table" or type(stored.Cards) ~= "table" then
+				stored = { Cards = {} }
+			end
+			local seen = {}
+			for _, card in stored.Cards do
+				if type(card) == "table" and card.UserId then
+					seen[card.UserId] = true
+				end
+			end
+			for _, card in toAdd do
+				if not seen[card.UserId] then
+					table.insert(stored.Cards, card)
+					seen[card.UserId] = true
+				end
+			end
+			while #stored.Cards > POOL_CAP do
+				table.remove(stored.Cards, math.random(1, #stored.Cards))
+			end
+			return stored
+		end)
+	end)
+end
+
+local function submitIfRare(card)
+	local tier = Config.TierByName[card.Tier]
+	if tier and tier.Index >= Config.TierByName.Rare.Index and tier.Index < Config.TierByName.God.Index then
+		rememberPoolCard(card)
+		table.insert(pendingSubmits, card)
+	end
+end
+
+-- ===== scanning ============================================================
+
+local function scanAndStore(userId, basicInfo)
+	local card = Scanner.Scan(userId, basicInfo)
+	scanCache[userId] = card
+	submitIfRare(card)
+	return card
+end
+
+local function refillTick()
+	if #buffer >= Config.Roll.BufferTarget then
+		return
+	end
+
+	local candidates = {}
+	for _ = 1, 10 do
+		table.insert(candidates, randomUserId())
+	end
+	local found = Scanner.LookupUsers(candidates)
+	if found == nil then
+		consecutiveLookupFailures += 1
+		if consecutiveLookupFailures >= OFFLINE_AFTER_FAILURES and not offlineMode then
+			offlineMode = true
+			warn("[ECI] Account lookups unavailable (offline Studio?) — switching to stub cards so you can still test.")
+		end
+		return
+	end
+	consecutiveLookupFailures = 0
+	offlineMode = false
+
+	local scanned = 0
+	for userId, basicInfo in found do
+		if scanned >= 3 then
+			break
+		end
+		if not scanCache[userId] then
+			scanned += 1
+			table.insert(buffer, scanAndStore(userId, basicInfo))
+		end
+	end
+end
+
+-- ===== offline stubs =======================================================
+
+local stubCounter = 0
+
+local function makeStubCard()
+	local totalWeight = 0
+	for _, entry in OFFLINE_TIER_WEIGHTS do
+		totalWeight += entry.Weight
+	end
+	local pick = math.random() * totalWeight
+	local tierName = "Common"
+	for _, entry in OFFLINE_TIER_WEIGHTS do
+		pick -= entry.Weight
+		if pick <= 0 then
+			tierName = entry.Tier
+			break
+		end
+	end
+	stubCounter += 1
+	local tier = Config.TierByName[tierName]
+	return {
+		UserId = -stubCounter, -- negative = fake; never collides with real accounts
+		Name = "TestUser" .. stubCounter,
+		DisplayName = "Test User " .. stubCounter,
+		Tier = tierName,
+		Boost = tier.Boost,
+		Traits = { "Offline stub" },
+	}
+end
+
+-- ===== public API ==========================================================
+
+function CardPool.Init(getBestFreshInterval)
+	statsProvider = getBestFreshInterval
+
+	-- resolve legend usernames to ids (so we never trust hardcoded numbers)
+	task.spawn(function()
+		for _, legend in Config.Legends do
+			local resolved = nil
+			pcall(function()
+				resolved = Players:GetUserIdFromNameAsync(legend.Username)
+			end)
+			legend.ResolvedId = resolved or legend.KnownId
+			if legend.ResolvedId then
+				table.insert(legendCards, Scanner.BuildLegendCard(legend))
+			end
+		end
+	end)
+
+	task.spawn(function()
+		readGlobalPool()
+		while true do
+			task.wait(POOL_READ_INTERVAL)
+			readGlobalPool()
+		end
+	end)
+
+	task.spawn(function()
+		while true do
+			task.wait(POOL_FLUSH_INTERVAL)
+			flushSubmits()
+		end
+	end)
+
+	task.spawn(function()
+		while true do
+			local interval = Config.Roll.BaseFreshInterval
+			if statsProvider then
+				interval = statsProvider()
+			end
+			task.wait(interval)
+			refillTick()
+		end
+	end)
+end
+
+-- Scan a player who actually joined this server (free real account data!)
+function CardPool.CapturePlayer(player)
+	task.spawn(function()
+		if scanCache[player.UserId] then
+			return
+		end
+		local found = Scanner.LookupUsers({ player.UserId })
+		local basicInfo = found and found[player.UserId]
+		if basicInfo then
+			scanAndStore(player.UserId, basicInfo)
+		end
+	end)
+end
+
+local function drawFromRarePool()
+	local available = {}
+	local totalWeight = 0
+	for tierName, weight in TIER_POOL_WEIGHTS do
+		local list = rarePool[tierName]
+		if list and #list > 0 then
+			table.insert(available, { List = list, Weight = weight })
+			totalWeight += weight
+		end
+	end
+	if totalWeight == 0 then
+		return nil
+	end
+	local pick = math.random() * totalWeight
+	for _, entry in available do
+		pick -= entry.Weight
+		if pick <= 0 then
+			return entry.List[math.random(1, #entry.List)]
+		end
+	end
+	return nil
+end
+
+local function anyCachedCard()
+	for _, card in scanCache do
+		return card
+	end
+	return nil
+end
+
+-- Draw one card for a roll. Never fails.
+function CardPool.Draw(stats)
+	if #legendCards > 0 and math.random() < stats.GodChance then
+		return legendCards[math.random(1, #legendCards)]
+	end
+
+	if math.random() < stats.LuckChance then
+		local poolCard = drawFromRarePool()
+		if poolCard then
+			return poolCard
+		end
+	end
+
+	if #buffer > 0 then
+		return table.remove(buffer, 1)
+	end
+
+	-- buffer dry: dupes are allowed, so serve anything we know
+	return drawFromRarePool()
+		or anyCachedCard()
+		or (offlineMode and makeStubCard())
+		or makeStubCard()
+end
+
+return CardPool
+]]></string>
+        </Properties>
+      </Item>
+      <Item class="ModuleScript" referent="8">
+        <Properties>
+          <string name="Name">DataManager</string>
+          <string name="Source"><![CDATA[-- Loads and saves player progress with DataStores.
+-- NOTE: DataStores only work once the game is published and
+-- "Enable Studio Access to API Services" is turned on in Game Settings > Security.
+-- Until then the game still runs — progress just doesn't persist.
+
+local DataStoreService = game:GetService("DataStoreService")
+
+local DataManager = {}
+
+local STORE_NAME = "ECIPlayerData_v1"
+local KEY_PREFIX = "player_"
+local RETRIES = 3
+
+local store = nil
+do
+	local ok, result = pcall(function()
+		return DataStoreService:GetDataStore(STORE_NAME)
+	end)
+	if ok then
+		store = result
+	else
+		warn("[ECI] DataStores unavailable — progress will NOT save. " ..
+			"(Normal in Studio until the game is published with API access enabled.) " .. tostring(result))
+	end
+end
+
+local DEFAULT_DATA = {
+	Coins = 0,
+	TotalEarned = 0,
+	TotalRolls = 0,
+	BestTier = 0, -- highest tier index ever pulled
+	Upgrades = {}, -- nodeId -> level
+	Cards = {}, -- userId (as string) -> {Name, DisplayName, Tier, Boost, Traits, Flavor?, Count}
+	Equipped = {}, -- array of userId strings
+	AutoOn = true,
+	LastSeen = 0,
+}
+
+function DataManager.NewDefault()
+	local data = table.clone(DEFAULT_DATA)
+	data.Upgrades = {}
+	data.Cards = {}
+	data.Equipped = {}
+	return data
+end
+
+-- Returns (data, loadedSafely). When loadedSafely is false we refuse to save
+-- later, so a temporary outage can never wipe a player's real progress.
+function DataManager.Load(player)
+	if not store then
+		return DataManager.NewDefault(), false
+	end
+
+	local key = KEY_PREFIX .. player.UserId
+	for attempt = 1, RETRIES do
+		local ok, result = pcall(function()
+			return store:GetAsync(key)
+		end)
+		if ok then
+			if type(result) == "table" then
+				for field, defaultValue in DEFAULT_DATA do
+					if result[field] == nil then
+						result[field] = if type(defaultValue) == "table" then {} else defaultValue
+					end
+				end
+				return result, true
+			end
+			return DataManager.NewDefault(), true -- brand new player
+		end
+		if attempt < RETRIES then
+			task.wait(attempt)
+		end
+	end
+
+	warn(("[ECI] Failed to load data for %s — playing without saving this session"):format(player.Name))
+	return DataManager.NewDefault(), false
+end
+
+function DataManager.Save(player, data)
+	if not store then
+		return false
+	end
+
+	data.LastSeen = os.time()
+	local key = KEY_PREFIX .. player.UserId
+	for attempt = 1, RETRIES do
+		local ok = pcall(function()
+			store:UpdateAsync(key, function()
+				return data
+			end)
+		end)
+		if ok then
+			return true
+		end
+		if attempt < RETRIES then
+			task.wait(attempt)
+		end
+	end
+
+	warn(("[ECI] Failed to save data for %s"):format(player.Name))
+	return false
+end
+
+return DataManager
+]]></string>
+        </Properties>
+      </Item>
+      <Item class="ModuleScript" referent="9">
+        <Properties>
+          <string name="Name">Leaderboard</string>
+          <string name="Source"><![CDATA[-- Global top-10 leaderboard: a physical board near spawn showing the
+-- players who have earned the most coins of all time (OrderedDataStore).
+
+local DataStoreService = game:GetService("DataStoreService")
+local Players = game:GetService("Players")
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
+
+local Shared = ReplicatedStorage:WaitForChild("Shared")
+local Config = require(Shared:WaitForChild("Config"))
+local Format = require(Shared:WaitForChild("Format"))
+
+local Leaderboard = {}
+
+local orderedStore = nil
+pcall(function()
+	orderedStore = DataStoreService:GetOrderedDataStore("ECITotalEarned_v1")
+end)
+
+local nameCache = {}
+local rowLabels = {}
+
+function Leaderboard.Submit(userId, totalEarned)
+	if not orderedStore then
+		return
+	end
+	local amount = math.floor(totalEarned)
+	if amount <= 0 then
+		return
+	end
+	task.spawn(function()
+		pcall(function()
+			orderedStore:SetAsync(tostring(userId), amount)
+		end)
+	end)
+end
+
+local function getName(userId)
+	if nameCache[userId] then
+		return nameCache[userId]
+	end
+	local name = "Player " .. userId
+	local ok, result = pcall(function()
+		return Players:GetNameFromUserIdAsync(userId)
+	end)
+	if ok then
+		name = result
+	end
+	nameCache[userId] = name
+	return name
+end
+
+local function createBoard()
+	local board = Instance.new("Part")
+	board.Name = "GlobalLeaderboard"
+	board.Anchored = true
+	board.Size = Vector3.new(16, 9, 1)
+	board.Position = Vector3.new(34, 7.5, -20)
+	board.Color = Color3.fromRGB(25, 18, 40)
+	board.Material = Enum.Material.SmoothPlastic
+
+	local gui = Instance.new("SurfaceGui")
+	gui.Face = Enum.NormalId.Back -- this side faces the spawn point
+	gui.SizingMode = Enum.SurfaceGuiSizingMode.PixelsPerStud
+	gui.PixelsPerStud = 40
+	gui.Parent = board
+
+	local title = Instance.new("TextLabel")
+	title.BackgroundTransparency = 1
+	title.Size = UDim2.new(1, 0, 0, 56)
+	title.Font = Enum.Font.GothamBlack
+	title.TextSize = 36
+	title.TextColor3 = Color3.fromRGB(255, 215, 60)
+	title.Text = "🏆 TOP COLLECTORS"
+	title.Parent = gui
+
+	local list = Instance.new("Frame")
+	list.BackgroundTransparency = 1
+	list.Position = UDim2.new(0, 24, 0, 60)
+	list.Size = UDim2.new(1, -48, 1, -70)
+	list.Parent = gui
+
+	local layout = Instance.new("UIListLayout")
+	layout.SortOrder = Enum.SortOrder.LayoutOrder
+	layout.Padding = UDim.new(0, 2)
+	layout.Parent = list
+
+	for i = 1, Config.LeaderboardSize do
+		local row = Instance.new("TextLabel")
+		row.BackgroundTransparency = 1
+		row.Size = UDim2.new(1, 0, 0, 26)
+		row.Font = Enum.Font.GothamBold
+		row.TextSize = 20
+		row.TextXAlignment = Enum.TextXAlignment.Left
+		row.TextColor3 = Color3.fromRGB(230, 232, 240)
+		row.LayoutOrder = i
+		row.Text = ""
+		row.Parent = list
+		rowLabels[i] = row
+	end
+
+	board.Parent = workspace
+end
+
+function Leaderboard.Start()
+	createBoard()
+
+	if not orderedStore then
+		rowLabels[1].Text = "Leaderboard needs a published game with API access"
+		return
+	end
+
+	task.spawn(function()
+		while true do
+			local ok, pages = pcall(function()
+				return orderedStore:GetSortedAsync(false, Config.LeaderboardSize)
+			end)
+			if ok then
+				local page = pages:GetCurrentPage()
+				for i = 1, Config.LeaderboardSize do
+					local entry = page[i]
+					if entry then
+						local userId = tonumber(entry.key) or 0
+						rowLabels[i].Text = ("%d.  %s  —  %s coins"):format(i, getName(userId), Format(entry.value))
+					else
+						rowLabels[i].Text = ""
+					end
+				end
+			end
+			task.wait(Config.LeaderboardRefreshInterval)
+		end
+	end)
+end
+
+return Leaderboard
+]]></string>
+        </Properties>
+      </Item>
+      <Item class="Script" referent="10">
+        <Properties>
+          <string name="Name">Main</string>
+          <token name="RunContext">0</token>
+          <string name="Source"><![CDATA[-- Everything Card Incremental — server entry point.
+-- Owns all real state: rolls, the collection, coins, upgrades. The client
+-- only asks; everything is validated here.
+
+local Players = game:GetService("Players")
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
+
+local Shared = ReplicatedStorage:WaitForChild("Shared")
+local Config = require(Shared:WaitForChild("Config"))
+local Format = require(Shared:WaitForChild("Format"))
+
+local DataManager = require(script.Parent:WaitForChild("DataManager"))
+local CardPool = require(script.Parent:WaitForChild("CardPool"))
+local TreeBuilder = require(script.Parent:WaitForChild("TreeBuilder"))
+local Leaderboard = require(script.Parent:WaitForChild("Leaderboard"))
+
+-- ===== remotes =============================================================
+
+local remotes = Instance.new("Folder")
+remotes.Name = "Remotes"
+
+local function makeRemote(name)
+	local remote = Instance.new("RemoteEvent")
+	remote.Name = name
+	remote.Parent = remotes
+	return remote
+end
+
+local rollRemote = makeRemote("Roll")
+local buyRemote = makeRemote("BuyUpgrade")
+local equipRemote = makeRemote("Equip")
+local unequipRemote = makeRemote("Unequip")
+local equipBestRemote = makeRemote("EquipBest")
+local sellDupesRemote = makeRemote("SellDupes")
+local toggleAutoRemote = makeRemote("ToggleAuto")
+local stateRemote = makeRemote("StateChanged")
+local rollResultRemote = makeRemote("RollResult")
+local tickerRemote = makeRemote("Ticker")
+
+remotes.Parent = ReplicatedStorage
+
+-- ===== sessions ============================================================
+
+local sessions = {}
+local tvTicker = nil
+
+local function computeRate(data, stats)
+	local boostSum = 0
+	for _, userIdStr in data.Equipped do
+		local card = data.Cards[userIdStr]
+		if card then
+			boostSum += card.Boost
+		end
+	end
+	return Config.Economy.BaseRate * (1 + boostSum) * stats.CoinMult
+end
+
+local function buildState(session, includeCards)
+	local data = session.Data
+	local state = {
+		Coins = data.Coins,
+		TotalEarned = data.TotalEarned,
+		TotalRolls = data.TotalRolls,
+		BestTier = data.BestTier,
+		Upgrades = data.Upgrades,
+		Equipped = data.Equipped,
+		AutoOn = data.AutoOn,
+		Stats = session.Stats,
+		CoinsPerSec = computeRate(data, session.Stats),
+	}
+	if includeCards then
+		state.Cards = data.Cards
+	end
+	return state
+end
+
+local function pushState(player, includeCards)
+	local session = sessions[player]
+	if not session then
+		return
+	end
+	stateRemote:FireClient(player, buildState(session, includeCards))
+	session.CoinsValue.Value = Format(session.Data.Coins)
+	session.RollsValue.Value = session.Data.TotalRolls
+end
+
+local function announce(text)
+	tickerRemote:FireAllClients(text)
+	if tvTicker then
+		tvTicker.Text = text
+	end
+end
+
+-- ===== rolling =============================================================
+
+local function addCardToCollection(data, card)
+	local key = tostring(card.UserId)
+	local owned = data.Cards[key]
+	if owned then
+		owned.Count += 1
+		return false, owned.Count
+	end
+	data.Cards[key] = {
+		UserId = card.UserId,
+		Name = card.Name,
+		DisplayName = card.DisplayName,
+		Tier = card.Tier,
+		Boost = card.Boost,
+		Traits = card.Traits,
+		Flavor = card.Flavor,
+		Count = 1,
+	}
+	return true, 1
+end
+
+local function performRoll(player, isAuto)
+	local session = sessions[player]
+	if not session then
+		return
+	end
+	local data = session.Data
+	local stats = session.Stats
+
+	local now = os.clock()
+	if isAuto then
+		if now < session.NextAutoAt then
+			return
+		end
+		session.NextAutoAt = now + stats.AutoCooldown
+	else
+		if now < session.NextRollAt then
+			return
+		end
+		session.NextRollAt = now + stats.RollCooldown
+	end
+
+	local count = stats.MultiRoll
+	if isAuto and not stats.AutoMulti then
+		count = 1
+	end
+
+	local results = {}
+	for _ = 1, count do
+		local card = CardPool.Draw(stats)
+		local isNew, ownedCount = addCardToCollection(data, card)
+		data.TotalRolls += 1
+
+		local tier = Config.TierByName[card.Tier]
+		if tier.Index > data.BestTier then
+			data.BestTier = tier.Index
+		end
+		if tier.Index >= Config.TierByName.Legendary.Index then
+			announce(("🎉 %s pulled %s %s!"):format(player.Name, card.Tier:upper(), card.DisplayName))
+		end
+
+		table.insert(results, {
+			UserId = card.UserId,
+			Name = card.Name,
+			DisplayName = card.DisplayName,
+			Tier = card.Tier,
+			Boost = card.Boost,
+			Traits = card.Traits,
+			Flavor = card.Flavor,
+			IsNew = isNew,
+			Count = ownedCount,
+		})
+	end
+
+	rollResultRemote:FireClient(player, { Cards = results, Auto = isAuto })
+	pushState(player, true)
+end
+
+-- ===== player lifecycle ====================================================
+
+local function onPlayerAdded(player)
+	local data, loadedSafely = DataManager.Load(player)
+	if player.Parent ~= Players then
+		return
+	end
+
+	local leaderstats = Instance.new("Folder")
+	leaderstats.Name = "leaderstats"
+
+	local coinsValue = Instance.new("StringValue")
+	coinsValue.Name = "Coins"
+	coinsValue.Parent = leaderstats
+
+	local rollsValue = Instance.new("IntValue")
+	rollsValue.Name = "Rolls"
+	rollsValue.Parent = leaderstats
+
+	leaderstats.Parent = player
+
+	local stats = Config.ComputeStats(data.Upgrades)
+	local session = {
+		Data = data,
+		CanSave = loadedSafely,
+		Stats = stats,
+		NextRollAt = 0,
+		NextAutoAt = 0,
+		CoinsValue = coinsValue,
+		RollsValue = rollsValue,
+	}
+	sessions[player] = session
+
+	-- offline earnings
+	if stats.OfflineUnlocked and data.LastSeen > 0 then
+		local away = math.min(os.time() - data.LastSeen, Config.Economy.OfflineCapHours * 3600)
+		if away > 60 then
+			local earned = math.floor(computeRate(data, stats) * away * Config.Economy.OfflineFraction)
+			if earned > 0 then
+				data.Coins += earned
+				data.TotalEarned += earned
+				task.delay(3, function()
+					if sessions[player] then
+						tickerRemote:FireClient(player, ("💤 You earned %s coins while away!"):format(Format(earned)))
+					end
+				end)
+			end
+		end
+	end
+
+	pushState(player, true)
+	CardPool.CapturePlayer(player) -- their real account joins the card pool
+end
+
+Players.PlayerAdded:Connect(onPlayerAdded)
+for _, player in Players:GetPlayers() do
+	task.spawn(onPlayerAdded, player)
+end
+
+local function saveSession(player, session)
+	if not session.CanSave then
+		return
+	end
+	DataManager.Save(player, session.Data)
+	Leaderboard.Submit(player.UserId, session.Data.TotalEarned)
+end
+
+Players.PlayerRemoving:Connect(function(player)
+	local session = sessions[player]
+	sessions[player] = nil
+	if session then
+		saveSession(player, session)
+	end
+end)
+
+game:BindToClose(function()
+	for _, player in Players:GetPlayers() do
+		local session = sessions[player]
+		sessions[player] = nil
+		if session then
+			saveSession(player, session)
+		end
+	end
+end)
+
+-- ===== remote handlers =====================================================
+
+rollRemote.OnServerEvent:Connect(function(player)
+	performRoll(player, false)
+end)
+
+local function onBuyUpgrade(player, nodeId)
+	local session = sessions[player]
+	if not session or type(nodeId) ~= "string" then
+		return
+	end
+	local treeNode = Config.NodeById[nodeId]
+	if not treeNode then
+		return
+	end
+
+	local data = session.Data
+	local level = data.Upgrades[nodeId] or 0
+	if treeNode.MaxLevel and level >= treeNode.MaxLevel then
+		return
+	end
+	if treeNode.Requires and (data.Upgrades[treeNode.Requires] or 0) < 1 then
+		return
+	end
+	local cost = Config.GetNodeCost(treeNode, level)
+	if data.Coins < cost then
+		return
+	end
+
+	data.Coins -= cost
+	data.Upgrades[nodeId] = level + 1
+	session.Stats = Config.ComputeStats(data.Upgrades)
+	pushState(player, false)
+end
+
+buyRemote.OnServerEvent:Connect(onBuyUpgrade)
+
+equipRemote.OnServerEvent:Connect(function(player, userIdStr)
+	local session = sessions[player]
+	if not session or type(userIdStr) ~= "string" then
+		return
+	end
+	local data = session.Data
+	if not data.Cards[userIdStr] then
+		return
+	end
+	if table.find(data.Equipped, userIdStr) then
+		return
+	end
+	if #data.Equipped >= session.Stats.EquipSlots then
+		return
+	end
+	table.insert(data.Equipped, userIdStr)
+	pushState(player, false)
+end)
+
+unequipRemote.OnServerEvent:Connect(function(player, userIdStr)
+	local session = sessions[player]
+	if not session or type(userIdStr) ~= "string" then
+		return
+	end
+	local index = table.find(session.Data.Equipped, userIdStr)
+	if index then
+		table.remove(session.Data.Equipped, index)
+		pushState(player, false)
+	end
+end)
+
+equipBestRemote.OnServerEvent:Connect(function(player)
+	local session = sessions[player]
+	if not session then
+		return
+	end
+	local data = session.Data
+	local owned = {}
+	for userIdStr, card in data.Cards do
+		table.insert(owned, { Key = userIdStr, Boost = card.Boost })
+	end
+	table.sort(owned, function(a, b)
+		return a.Boost > b.Boost
+	end)
+	data.Equipped = {}
+	for i = 1, math.min(session.Stats.EquipSlots, #owned) do
+		table.insert(data.Equipped, owned[i].Key)
+	end
+	pushState(player, false)
+end)
+
+local function sellDupesFor(data, stats, userIdStr)
+	local card = data.Cards[userIdStr]
+	if not card or card.Count <= 1 then
+		return 0
+	end
+	local tier = Config.TierByName[card.Tier]
+	local dupes = card.Count - 1
+	card.Count = 1
+	return math.floor(tier.SellValue * dupes * stats.DupeMult)
+end
+
+sellDupesRemote.OnServerEvent:Connect(function(player, target)
+	local session = sessions[player]
+	if not session or type(target) ~= "string" then
+		return
+	end
+	local data = session.Data
+	local earned = 0
+	if target == "ALL" then
+		for userIdStr in data.Cards do
+			earned += sellDupesFor(data, session.Stats, userIdStr)
+		end
+	else
+		earned = sellDupesFor(data, session.Stats, target)
+	end
+	if earned > 0 then
+		data.Coins += earned
+		data.TotalEarned += earned
+		pushState(player, true)
+	end
+end)
+
+toggleAutoRemote.OnServerEvent:Connect(function(player)
+	local session = sessions[player]
+	if not session then
+		return
+	end
+	session.Data.AutoOn = not session.Data.AutoOn
+	pushState(player, false)
+end)
+
+-- ===== loops ===============================================================
+
+-- coin income, once per second
+task.spawn(function()
+	while true do
+		task.wait(1)
+		for player, session in sessions do
+			local earned = computeRate(session.Data, session.Stats)
+			session.Data.Coins += earned
+			session.Data.TotalEarned += earned
+			pushState(player, false)
+		end
+	end
+end)
+
+-- auto-roller heartbeat
+task.spawn(function()
+	while true do
+		task.wait(0.25)
+		for player, session in sessions do
+			if session.Stats.AutoUnlocked and session.Data.AutoOn then
+				task.spawn(performRoll, player, true)
+			end
+		end
+	end
+end)
+
+-- autosave
+task.spawn(function()
+	while true do
+		task.wait(Config.AutosaveInterval)
+		for _, player in Players:GetPlayers() do
+			local session = sessions[player]
+			if session then
+				saveSession(player, session)
+			end
+		end
+	end
+end)
+
+-- ===== world ===============================================================
+
+tvTicker = TreeBuilder.Build(onBuyUpgrade)
+Leaderboard.Start()
+
+-- the card pool scans fastest when someone bought Fresh Scan upgrades
+CardPool.Init(function()
+	local best = Config.Roll.BaseFreshInterval
+	for _, session in sessions do
+		if session.Stats.FreshInterval < best then
+			best = session.Stats.FreshInterval
+		end
+	end
+	return best
+end)
+
+print(("[%s] server started"):format(Config.GameName))
+]]></string>
+        </Properties>
+      </Item>
+      <Item class="ModuleScript" referent="11">
+        <Properties>
+          <string name="Name">Scanner</string>
+          <string name="Source"><![CDATA[-- Scans a real Roblox account and turns it into card data.
+--
+-- Two layers of signals:
+--   1. Engine APIs (always work): username/id heuristics, verified badge,
+--      and whatever the account is WEARING right now — worn avatars are
+--      public even when inventories are private, which is how we catch a
+--      Dominus on a locked-down account.
+--   2. RoProxy (optional, needs HTTP enabled): collectible value (RAP) for
+--      the Legendary/Mythic robux tiers, account age, Admin/Veteran badges.
+--      If the proxy is down or HTTP is off, scans silently fall back to
+--      engine-only signals — a roll never fails because of it.
+
+local HttpService = game:GetService("HttpService")
+local MarketplaceService = game:GetService("MarketplaceService")
+local Players = game:GetService("Players")
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local UserService = game:GetService("UserService")
+
+local Shared = ReplicatedStorage:WaitForChild("Shared")
+local Config = require(Shared:WaitForChild("Config"))
+local Format = require(Shared:WaitForChild("Format"))
+
+local Scanner = {}
+
+local MAX_WORN_ASSETS_CHECKED = 8
+local PROXY_FAILURE_LIMIT = 3
+local PROXY_RETRY_AFTER = 300 -- seconds proxy stays disabled after repeated failures
+
+local productInfoCache = {} -- assetId -> {Price, IsLimited, Name}
+local httpEnabled = nil -- unknown until first attempt
+local proxyFailures = 0
+local proxyDisabledUntil = 0
+
+-- ===== proxy helpers =======================================================
+
+local function proxyGet(url)
+	if httpEnabled == false then
+		return nil
+	end
+	if os.clock() < proxyDisabledUntil then
+		return nil
+	end
+	local ok, result = pcall(function()
+		return HttpService:GetAsync(url)
+	end)
+	if not ok then
+		local message = tostring(result)
+		if message:find("not enabled") or message:find("Http requests are not enabled") then
+			httpEnabled = false
+			warn("[ECI] HTTP requests are disabled — deep scans (RAP tiers) are off. " ..
+				"Enable them in Game Settings > Security > Allow HTTP Requests for the full experience.")
+			return nil
+		end
+		proxyFailures += 1
+		if proxyFailures >= PROXY_FAILURE_LIMIT then
+			proxyDisabledUntil = os.clock() + PROXY_RETRY_AFTER
+			proxyFailures = 0
+		end
+		return nil
+	end
+	httpEnabled = true
+	proxyFailures = 0
+	local decoded
+	local decodeOk = pcall(function()
+		decoded = HttpService:JSONDecode(result)
+	end)
+	if decodeOk then
+		return decoded
+	end
+	return nil
+end
+
+local function fetchAccountAgeYears(userId)
+	local info = proxyGet(("https://users.roproxy.com/v1/users/%d"):format(userId))
+	if info and type(info.created) == "string" then
+		local year = tonumber(info.created:match("^(%d%d%d%d)"))
+		if year then
+			local currentYear = tonumber(os.date("!%Y"))
+			return math.max((currentYear :: number) - year, 0)
+		end
+	end
+	return nil
+end
+
+local function fetchRap(userId)
+	local canView = proxyGet(("https://inventory.roproxy.com/v1/users/%d/can-view-inventory"):format(userId))
+	if not canView or canView.canView ~= true then
+		return nil, canView ~= nil -- second value: we did learn their privacy setting
+	end
+	local page = proxyGet(("https://inventory.roproxy.com/v1/users/%d/assets/collectibles?sortOrder=Asc&limit=100"):format(userId))
+	if not page or type(page.data) ~= "table" then
+		return nil, true
+	end
+	local total = 0
+	for _, item in page.data do
+		if type(item) == "table" and type(item.recentAveragePrice) == "number" then
+			total += item.recentAveragePrice
+		end
+	end
+	return total, true
+end
+
+local function fetchRobloxBadges(userId)
+	local badges = proxyGet(("https://accountinformation.roproxy.com/v1/users/%d/roblox-badges"):format(userId))
+	local found = {}
+	if type(badges) == "table" then
+		for _, badge in badges do
+			if type(badge) == "table" and type(badge.name) == "string" then
+				found[badge.name] = true
+			end
+		end
+	end
+	return found
+end
+
+-- ===== engine helpers ======================================================
+
+local function getProductInfo(assetId)
+	local cached = productInfoCache[assetId]
+	if cached ~= nil then
+		return cached
+	end
+	local info = nil
+	pcall(function()
+		local raw = MarketplaceService:GetProductInfo(assetId)
+		info = {
+			Name = raw.Name,
+			Price = raw.PriceInRobux or 0,
+			IsLimited = raw.IsLimited == true or raw.IsLimitedUnique == true,
+		}
+	end)
+	productInfoCache[assetId] = info or false
+	return info or false
+end
+
+local function scanWornAssets(userId)
+	local worn = {
+		DominusCount = 0,
+		LimitedCount = 0,
+		PriceSum = 0,
+		AssetCount = 0,
+	}
+	local appearance
+	pcall(function()
+		appearance = Players:GetCharacterAppearanceInfoAsync(userId)
+	end)
+	if type(appearance) ~= "table" or type(appearance.assets) ~= "table" then
+		return worn
+	end
+	worn.AssetCount = #appearance.assets
+	local checked = 0
+	for _, asset in appearance.assets do
+		if type(asset) ~= "table" or type(asset.id) ~= "number" then
+			continue
+		end
+		local assetName = if type(asset.name) == "string" then asset.name else ""
+		if assetName:sub(1, 7) == "Dominus" then
+			worn.DominusCount += 1
+		end
+		if checked < MAX_WORN_ASSETS_CHECKED then
+			checked += 1
+			local info = getProductInfo(asset.id)
+			if info then
+				worn.PriceSum += info.Price
+				if info.IsLimited then
+					worn.LimitedCount += 1
+				end
+				if info.Name:sub(1, 7) == "Dominus" and assetName:sub(1, 7) ~= "Dominus" then
+					worn.DominusCount += 1
+				end
+			end
+		end
+	end
+	return worn
+end
+
+local function isCleanName(name)
+	return name:match("^[A-Za-z]+$") ~= nil
+end
+
+-- ===== tier decision =======================================================
+
+local function decideTier(facts, traits)
+	local function trait(text)
+		table.insert(traits, text)
+	end
+
+	-- collect trait labels first (they show on the card)
+	if facts.DominusCount >= 1 then
+		trait(facts.DominusCount > 1 and ("Dominus x" .. facts.DominusCount) or "Dominus")
+	end
+	if facts.Rap and facts.Rap > 0 then
+		trait("RAP " .. Format(facts.Rap))
+	end
+	if facts.LimitedCount >= 1 then
+		trait("Limited worn")
+	end
+	if facts.Verified then
+		trait("Verified")
+	end
+	if facts.AdminBadge then
+		trait("Roblox Admin")
+	end
+	if facts.VeteranBadge then
+		trait("Veteran")
+	end
+	if facts.UserId <= 10_000 then
+		trait("OG id")
+	elseif facts.UserId <= 1_000_000 then
+		trait("Early id")
+	end
+	if facts.UserId % 100_000 == 0 then
+		trait("Round id")
+	end
+	if facts.NameLength <= 4 and facts.CleanName then
+		trait("Rare name")
+	end
+	if facts.AccountAge and facts.AccountAge >= 15 then
+		trait(facts.AccountAge .. "y account")
+	end
+
+	-- highest tier whose condition holds wins
+	if facts.AdminBadge or facts.Rap and facts.Rap >= 1_000_000 or facts.DominusCount >= 2 then
+		return "Mythic"
+	end
+	if (facts.Rap and facts.Rap >= 100_000) or facts.DominusCount >= 1 or facts.UserId <= 10_000 then
+		return "Legendary"
+	end
+	if (facts.Rap and facts.Rap > 0)
+		or facts.LimitedCount >= 1
+		or facts.Verified
+		or facts.VeteranBadge
+		or facts.UserId <= 1_000_000
+		or facts.UserId % 100_000 == 0
+		or (facts.NameLength <= 4 and facts.CleanName)
+		or (facts.AccountAge ~= nil and facts.AccountAge >= 15)
+	then
+		return "Rare"
+	end
+	if facts.UserId <= 100_000_000
+		or (facts.NameLength <= 6 and facts.CleanName)
+		or facts.PriceSum >= 1_000
+		or (facts.AccountAge ~= nil and facts.AccountAge >= 8)
+	then
+		return "Uncommon"
+	end
+	return "Common"
+end
+
+-- ===== public API ==========================================================
+
+-- Look up several user ids at once; returns map of userId -> {Username, DisplayName, Verified}.
+-- One web call for the whole batch. Returns nil if the lookup itself failed (offline).
+function Scanner.LookupUsers(userIds)
+	local result = nil
+	pcall(function()
+		local infos = UserService:GetUserInfosByUserIdsAsync(userIds)
+		result = {}
+		for _, info in infos do
+			result[info.Id] = {
+				Username = info.Username,
+				DisplayName = info.DisplayName,
+				Verified = info.HasVerifiedBadge == true,
+			}
+		end
+	end)
+	return result
+end
+
+-- Full scan of one account. basicInfo comes from LookupUsers.
+-- Returns a complete card data table.
+function Scanner.Scan(userId, basicInfo)
+	local worn = scanWornAssets(userId)
+	local rap = fetchRap(userId)
+	local robloxBadges = fetchRobloxBadges(userId)
+	local accountAge = fetchAccountAgeYears(userId)
+
+	local username = basicInfo.Username or ("User" .. userId)
+	local facts = {
+		UserId = userId,
+		NameLength = #username,
+		CleanName = isCleanName(username),
+		Verified = basicInfo.Verified == true,
+		DominusCount = worn.DominusCount,
+		LimitedCount = worn.LimitedCount,
+		PriceSum = worn.PriceSum,
+		Rap = rap,
+		AdminBadge = robloxBadges["Administrator"] == true,
+		VeteranBadge = robloxBadges["Veteran"] == true,
+		AccountAge = accountAge,
+	}
+
+	local traits = {}
+	local tierName = decideTier(facts, traits)
+	local tier = Config.TierByName[tierName]
+
+	return {
+		UserId = userId,
+		Name = username,
+		DisplayName = basicInfo.DisplayName or username,
+		Tier = tierName,
+		Boost = tier.Boost,
+		Traits = traits,
+	}
+end
+
+-- Build a card for a configured legend (skips scanning entirely).
+function Scanner.BuildLegendCard(legend)
+	local tier = Config.TierByName[legend.Tier] or Config.TierByName.God
+	return {
+		UserId = legend.ResolvedId,
+		Name = legend.Username,
+		DisplayName = legend.Username,
+		Tier = tier.Name,
+		Boost = legend.Boost or tier.Boost,
+		Traits = { "Legend" },
+		Flavor = legend.Flavor,
+	}
+end
+
+return Scanner
+]]></string>
+        </Properties>
+      </Item>
+      <Item class="ModuleScript" referent="12">
+        <Properties>
+          <string name="Name">TreeBuilder</string>
+          <string name="Source"><![CDATA[-- Generates the physical world from Config: upgrade pads with glowing paths
+-- between them (like an upgrade-tree game), plus the purple card TV kiosk.
+-- Pad billboards (cost/level, per-player) are drawn client-side; this module
+-- only builds the shared geometry and the buy prompts.
+
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
+
+local Shared = ReplicatedStorage:WaitForChild("Shared")
+local Config = require(Shared:WaitForChild("Config"))
+
+local TreeBuilder = {}
+
+local PAD_SIZE = Vector3.new(8, 0.6, 8)
+local PAD_Y = 0.3
+
+local function makePart(props)
+	local part = Instance.new("Part")
+	part.Anchored = true
+	part.Material = props.Material or Enum.Material.SmoothPlastic
+	part.Size = props.Size
+	part.CFrame = props.CFrame
+	part.Color = props.Color
+	if props.Transparency then
+		part.Transparency = props.Transparency
+	end
+	part.Name = props.Name or "Part"
+	part.Parent = props.Parent
+	return part
+end
+
+local function buildPad(treeNode, folder, onBuy)
+	local x, z = treeNode.Pos[1], treeNode.Pos[2]
+	local color = Config.BranchColors[treeNode.Branch] or Color3.fromRGB(200, 200, 200)
+
+	local pad = makePart({
+		Name = "Pad_" .. treeNode.Id,
+		Size = PAD_SIZE,
+		CFrame = CFrame.new(x, PAD_Y, z),
+		Color = color,
+		Parent = folder,
+	})
+	pad:SetAttribute("NodeId", treeNode.Id)
+
+	local trim = makePart({
+		Name = "Trim",
+		Size = Vector3.new(PAD_SIZE.X + 0.6, 0.2, PAD_SIZE.Z + 0.6),
+		CFrame = CFrame.new(x, 0.1, z),
+		Color = color,
+		Material = Enum.Material.Neon,
+		Parent = pad,
+	})
+	trim.Transparency = 0.2
+
+	local prompt = Instance.new("ProximityPrompt")
+	prompt.ActionText = "Buy"
+	prompt.ObjectText = treeNode.Name
+	prompt.HoldDuration = 0
+	prompt.MaxActivationDistance = 9
+	prompt.RequiresLineOfSight = false
+	prompt.Parent = pad
+	prompt.Triggered:Connect(function(player)
+		onBuy(player, treeNode.Id)
+	end)
+end
+
+local function buildPath(fromNode, toNode, folder)
+	local a = Vector3.new(fromNode.Pos[1], 0.15, fromNode.Pos[2])
+	local b = Vector3.new(toNode.Pos[1], 0.15, toNode.Pos[2])
+	local distance = (b - a).Magnitude
+	if distance < 1 then
+		return
+	end
+	local mid = (a + b) / 2
+	makePart({
+		Name = "Path",
+		Size = Vector3.new(1.4, 0.1, distance - 6),
+		CFrame = CFrame.lookAt(mid, b),
+		Color = Config.BranchColors[toNode.Branch] or Color3.fromRGB(200, 200, 200),
+		Material = Enum.Material.Neon,
+		Transparency = 0.35,
+		Parent = folder,
+	})
+end
+
+local function buildTv(folder)
+	-- stand
+	makePart({
+		Name = "TvStand",
+		Size = Vector3.new(4, 3, 2),
+		CFrame = CFrame.new(0, 1.5, -20),
+		Color = Color3.fromRGB(40, 30, 60),
+		Parent = folder,
+	})
+	-- screen body
+	local screen = makePart({
+		Name = "CardTv",
+		Size = Vector3.new(15, 8, 1.2),
+		CFrame = CFrame.new(0, 7, -20),
+		Color = Color3.fromRGB(25, 18, 40),
+		Parent = folder,
+	})
+	-- neon frame
+	makePart({
+		Name = "TvFrame",
+		Size = Vector3.new(15.8, 8.8, 1),
+		CFrame = CFrame.new(0, 7, -20.2),
+		Color = Color3.fromRGB(150, 80, 255),
+		Material = Enum.Material.Neon,
+		Transparency = 0.1,
+		Parent = screen,
+	})
+
+	local gui = Instance.new("SurfaceGui")
+	gui.Face = Enum.NormalId.Back -- faces spawn
+	gui.SizingMode = Enum.SurfaceGuiSizingMode.PixelsPerStud
+	gui.PixelsPerStud = 40
+	gui.Parent = screen
+
+	local title = Instance.new("TextLabel")
+	title.BackgroundTransparency = 1
+	title.Size = UDim2.new(1, 0, 0, 110)
+	title.Position = UDim2.new(0, 0, 0, 16)
+	title.Font = Enum.Font.GothamBlack
+	title.TextSize = 64
+	title.TextColor3 = Color3.fromRGB(200, 150, 255)
+	title.Text = "EVERYTHING CARDS"
+	title.Parent = gui
+
+	local subtitle = Instance.new("TextLabel")
+	subtitle.BackgroundTransparency = 1
+	subtitle.Size = UDim2.new(1, 0, 0, 40)
+	subtitle.Position = UDim2.new(0, 0, 0, 120)
+	subtitle.Font = Enum.Font.Gotham
+	subtitle.TextSize = 24
+	subtitle.TextColor3 = Color3.fromRGB(150, 140, 180)
+	subtitle.Text = "Every card is a real Roblox account. Press ROLL."
+	subtitle.Parent = gui
+
+	local ticker = Instance.new("TextLabel")
+	ticker.Name = "Ticker"
+	ticker.BackgroundTransparency = 1
+	ticker.Size = UDim2.new(1, -40, 0, 120)
+	ticker.Position = UDim2.new(0, 20, 0, 180)
+	ticker.Font = Enum.Font.GothamBold
+	ticker.TextSize = 30
+	ticker.TextWrapped = true
+	ticker.TextColor3 = Color3.fromRGB(255, 215, 60)
+	ticker.Text = "Big pulls will be announced here..."
+	ticker.Parent = gui
+
+	return ticker
+end
+
+-- Builds everything. onBuy(player, nodeId) is called when a pad prompt fires.
+-- Returns the TV ticker label so the server can announce big pulls on it.
+function TreeBuilder.Build(onBuy)
+	local folder = Instance.new("Folder")
+	folder.Name = "UpgradeTree"
+
+	for _, treeNode in Config.Tree do
+		buildPad(treeNode, folder, onBuy)
+		local parent = treeNode.Requires and Config.NodeById[treeNode.Requires]
+		if parent then
+			buildPath(parent, treeNode, folder)
+		end
+	end
+
+	local ticker = buildTv(folder)
+	folder.Parent = workspace
+	return ticker
+end
+
+return TreeBuilder
+]]></string>
+        </Properties>
+      </Item>
+    </Item>
+  </Item>
+  <Item class="StarterPlayer" referent="13">
+    <Properties>
+      <string name="Name">StarterPlayer</string>
+    </Properties>
+    <Item class="StarterPlayerScripts" referent="14">
+      <Properties>
+        <string name="Name">StarterPlayerScripts</string>
+      </Properties>
+      <Item class="Folder" referent="15">
+        <Properties>
+          <string name="Name">Client</string>
+        </Properties>
+        <Item class="ModuleScript" referent="16">
+          <Properties>
+            <string name="Name">Cards</string>
+            <string name="Source"><![CDATA[-- Card visuals: builds card frames, the roll reveal splash, and the
+-- fast-roll toast feed. Rare+ pulls always get the big splash; common spam
+-- during auto-rolling collapses into small toasts so the screen stays readable.
+
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local TweenService = game:GetService("TweenService")
+
+local Shared = ReplicatedStorage:WaitForChild("Shared")
+local Config = require(Shared:WaitForChild("Config"))
+local Format = require(Shared:WaitForChild("Format"))
+
+local PANEL_COLOR = Color3.fromRGB(30, 22, 48)
+local TEXT_COLOR = Color3.fromRGB(240, 238, 248)
+local DIM_COLOR = Color3.fromRGB(160, 152, 185)
+
+local function create(className, props)
+	local instance: any = Instance.new(className)
+	for key, value in props do
+		if key ~= "Parent" then
+			instance[key] = value
+		end
+	end
+	instance.Parent = props.Parent
+	return instance
+end
+
+local Cards = {}
+Cards.__index = Cards
+
+function Cards.new(screenGui)
+	local self = setmetatable({}, Cards)
+	self.ScreenGui = screenGui
+	self.DismissToken = 0
+	self.Toasts = {}
+
+	self.RevealSound = create("Sound", { SoundId = "rbxasset://sounds/electronicpingshort.wav", Volume = 0.5, Parent = screenGui })
+
+	-- full-screen reveal overlay (click anywhere to dismiss)
+	self.Overlay = create("TextButton", {
+		Name = "RevealOverlay",
+		BackgroundColor3 = Color3.fromRGB(10, 6, 20),
+		BackgroundTransparency = 0.35,
+		Size = UDim2.new(1, 0, 1, 0),
+		Text = "",
+		AutoButtonColor = false,
+		Visible = false,
+		ZIndex = 10,
+		Parent = screenGui,
+	})
+	self.CardRow = create("Frame", {
+		BackgroundTransparency = 1,
+		AnchorPoint = Vector2.new(0.5, 0.5),
+		Position = UDim2.new(0.5, 0, 0.5, -20),
+		Size = UDim2.new(1, -40, 0, 300),
+		ZIndex = 11,
+		Parent = self.Overlay,
+	})
+	create("UIListLayout", {
+		FillDirection = Enum.FillDirection.Horizontal,
+		HorizontalAlignment = Enum.HorizontalAlignment.Center,
+		VerticalAlignment = Enum.VerticalAlignment.Center,
+		Padding = UDim.new(0, 14),
+		Parent = self.CardRow,
+	})
+	create("TextLabel", {
+		BackgroundTransparency = 1,
+		AnchorPoint = Vector2.new(0.5, 1),
+		Position = UDim2.new(0.5, 0, 1, -24),
+		Size = UDim2.new(1, 0, 0, 24),
+		Font = Enum.Font.Gotham,
+		TextSize = 15,
+		TextColor3 = DIM_COLOR,
+		Text = "click anywhere to close",
+		ZIndex = 11,
+		Parent = self.Overlay,
+	})
+
+	self.Overlay.Activated:Connect(function()
+		self:HideSplash()
+	end)
+
+	-- toast stack for fast rolls (bottom right)
+	self.ToastColumn = create("Frame", {
+		BackgroundTransparency = 1,
+		AnchorPoint = Vector2.new(1, 1),
+		Position = UDim2.new(1, -12, 1, -12),
+		Size = UDim2.new(0, 260, 0, 320),
+		Parent = screenGui,
+	})
+	create("UIListLayout", {
+		VerticalAlignment = Enum.VerticalAlignment.Bottom,
+		HorizontalAlignment = Enum.HorizontalAlignment.Right,
+		Padding = UDim.new(0, 6),
+		Parent = self.ToastColumn,
+	})
+
+	return self
+end
+
+-- one card frame, used by the reveal splash
+function Cards:BuildCardFrame(card, width, parent)
+	local tier = Config.TierByName[card.Tier] or Config.Tiers[1]
+	local height = math.floor(width * 1.45)
+
+	local frame = create("Frame", {
+		BackgroundColor3 = PANEL_COLOR,
+		Size = UDim2.fromOffset(width, height),
+		ZIndex = 11,
+		Parent = parent,
+	})
+	create("UICorner", { CornerRadius = UDim.new(0, 14), Parent = frame })
+	create("UIStroke", { Color = tier.Color, Thickness = 3, Parent = frame })
+
+	local imageSize = math.floor(width * 0.55)
+	if card.UserId and card.UserId > 0 then
+		local image = create("ImageLabel", {
+			BackgroundColor3 = Color3.fromRGB(20, 14, 34),
+			AnchorPoint = Vector2.new(0.5, 0),
+			Position = UDim2.new(0.5, 0, 0, 12),
+			Size = UDim2.fromOffset(imageSize, imageSize),
+			Image = ("rbxthumb://type=AvatarHeadShot&id=%d&w=150&h=150"):format(card.UserId),
+			ZIndex = 12,
+			Parent = frame,
+		})
+		create("UICorner", { CornerRadius = UDim.new(1, 0), Parent = image })
+	else
+		local placeholder = create("TextLabel", {
+			BackgroundColor3 = Color3.fromRGB(20, 14, 34),
+			AnchorPoint = Vector2.new(0.5, 0),
+			Position = UDim2.new(0.5, 0, 0, 12),
+			Size = UDim2.fromOffset(imageSize, imageSize),
+			Font = Enum.Font.GothamBlack,
+			TextSize = math.floor(imageSize * 0.5),
+			TextColor3 = DIM_COLOR,
+			Text = "?",
+			ZIndex = 12,
+			Parent = frame,
+		})
+		create("UICorner", { CornerRadius = UDim.new(1, 0), Parent = placeholder })
+	end
+
+	local y = imageSize + 18
+	local tierText = if card.Tier == "Secret" then "SYSTEM ERROR" else card.Tier:upper()
+	create("TextLabel", {
+		BackgroundTransparency = 1,
+		Position = UDim2.new(0, 0, 0, y),
+		Size = UDim2.new(1, 0, 0, 18),
+		Font = Enum.Font.GothamBlack,
+		TextSize = 15,
+		TextColor3 = tier.Color,
+		Text = tierText,
+		ZIndex = 12,
+		Parent = frame,
+	})
+	create("TextLabel", {
+		BackgroundTransparency = 1,
+		Position = UDim2.new(0, 4, 0, y + 20),
+		Size = UDim2.new(1, -8, 0, 20),
+		Font = Enum.Font.GothamBold,
+		TextSize = 17,
+		TextColor3 = TEXT_COLOR,
+		TextTruncate = Enum.TextTruncate.AtEnd,
+		Text = card.DisplayName or card.Name,
+		ZIndex = 12,
+		Parent = frame,
+	})
+	create("TextLabel", {
+		BackgroundTransparency = 1,
+		Position = UDim2.new(0, 4, 0, y + 40),
+		Size = UDim2.new(1, -8, 0, 14),
+		Font = Enum.Font.Gotham,
+		TextSize = 12,
+		TextColor3 = DIM_COLOR,
+		TextTruncate = Enum.TextTruncate.AtEnd,
+		Text = "@" .. (card.Name or "?"),
+		ZIndex = 12,
+		Parent = frame,
+	})
+	create("TextLabel", {
+		BackgroundTransparency = 1,
+		Position = UDim2.new(0, 4, 0, y + 58),
+		Size = UDim2.new(1, -8, 0, 18),
+		Font = Enum.Font.GothamBold,
+		TextSize = 15,
+		TextColor3 = Color3.fromRGB(255, 215, 60),
+		Text = "+" .. Format(card.Boost) .. " coins/s",
+		ZIndex = 12,
+		Parent = frame,
+	})
+
+	local detail = card.Flavor
+	if not detail and card.Traits and #card.Traits > 0 then
+		detail = table.concat(card.Traits, " • ")
+	end
+	if detail then
+		create("TextLabel", {
+			BackgroundTransparency = 1,
+			Position = UDim2.new(0, 6, 0, y + 78),
+			Size = UDim2.new(1, -12, 1, -(y + 84)),
+			Font = Enum.Font.Gotham,
+			TextSize = 11,
+			TextWrapped = true,
+			TextYAlignment = Enum.TextYAlignment.Top,
+			TextColor3 = DIM_COLOR,
+			Text = detail,
+			ZIndex = 12,
+			Parent = frame,
+		})
+	end
+
+	if card.IsNew then
+		local badge = create("TextLabel", {
+			BackgroundColor3 = Color3.fromRGB(255, 215, 60),
+			Position = UDim2.new(0, -8, 0, -8),
+			Size = UDim2.fromOffset(48, 20),
+			Font = Enum.Font.GothamBlack,
+			TextSize = 12,
+			TextColor3 = Color3.fromRGB(60, 40, 0),
+			Text = "NEW!",
+			Rotation = -8,
+			ZIndex = 13,
+			Parent = frame,
+		})
+		create("UICorner", { CornerRadius = UDim.new(0, 6), Parent = badge })
+	elseif card.Count and card.Count > 1 then
+		create("TextLabel", {
+			BackgroundTransparency = 1,
+			AnchorPoint = Vector2.new(1, 1),
+			Position = UDim2.new(1, -8, 1, -4),
+			Size = UDim2.fromOffset(60, 16),
+			Font = Enum.Font.GothamBold,
+			TextSize = 13,
+			TextXAlignment = Enum.TextXAlignment.Right,
+			TextColor3 = DIM_COLOR,
+			Text = "x" .. card.Count,
+			ZIndex = 12,
+			Parent = frame,
+		})
+	end
+
+	return frame
+end
+
+function Cards:HideSplash()
+	self.DismissToken += 1
+	self.Overlay.Visible = false
+end
+
+function Cards:ShowSplash(rollCards, holdSeconds)
+	for _, child in self.CardRow:GetChildren() do
+		if child:IsA("Frame") then
+			child:Destroy()
+		end
+	end
+
+	local width = if #rollCards <= 1 then 210 elseif #rollCards <= 3 then 180 else 150
+	for _, card in rollCards do
+		self:BuildCardFrame(card, width, self.CardRow)
+	end
+
+	self.Overlay.Visible = true
+	self.DismissToken += 1
+	local token = self.DismissToken
+	task.delay(holdSeconds, function()
+		if self.DismissToken == token then
+			self.Overlay.Visible = false
+		end
+	end)
+end
+
+function Cards:ShowToast(card)
+	local tier = Config.TierByName[card.Tier] or Config.Tiers[1]
+	local toast = create("TextLabel", {
+		BackgroundColor3 = PANEL_COLOR,
+		BackgroundTransparency = 0.15,
+		Size = UDim2.new(0, 250, 0, 30),
+		Font = Enum.Font.GothamBold,
+		TextSize = 13,
+		TextColor3 = tier.Color,
+		TextTruncate = Enum.TextTruncate.AtEnd,
+		Text = ("+ %s  %s"):format(card.Tier, card.DisplayName or card.Name),
+		Parent = self.ToastColumn,
+	})
+	create("UICorner", { CornerRadius = UDim.new(0, 8), Parent = toast })
+	task.delay(1.6, function()
+		local tween = TweenService:Create(toast, TweenInfo.new(0.4), { TextTransparency = 1, BackgroundTransparency = 1 })
+		tween.Completed:Once(function()
+			toast:Destroy()
+		end)
+		tween:Play()
+	end)
+end
+
+-- entry point for every roll result from the server
+function Cards:ShowRollResult(payload)
+	local rollCards = payload.Cards
+	local bestIndex = 1
+	for _, card in rollCards do
+		local tier = Config.TierByName[card.Tier]
+		if tier and tier.Index > bestIndex then
+			bestIndex = tier.Index
+		end
+	end
+
+	local rareIndex = Config.TierByName.Rare.Index
+	local isExciting = bestIndex >= rareIndex
+
+	self.RevealSound.PlaybackSpeed = 0.9 + bestIndex * 0.12
+	self.RevealSound:Play()
+
+	-- auto-roll spam of commons becomes toasts; anything exciting gets the splash
+	if payload.Auto and not isExciting then
+		for _, card in rollCards do
+			self:ShowToast(card)
+		end
+		return
+	end
+	self:ShowSplash(rollCards, if isExciting then 4.5 else 2.2)
+end
+
+return Cards
+]]></string>
+          </Properties>
+        </Item>
+        <Item class="LocalScript" referent="17">
+          <Properties>
+            <string name="Name">Main</string>
+            <string name="Source"><![CDATA[-- Everything Card Incremental — client entry point.
+-- Wires the UI to the server remotes. No game logic lives here: the server
+-- decides every roll, purchase, and coin; the client just displays them.
+
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
+
+local UI = require(script.Parent:WaitForChild("UI"))
+local Cards = require(script.Parent:WaitForChild("Cards"))
+
+local remotes = ReplicatedStorage:WaitForChild("Remotes")
+local rollRemote = remotes:WaitForChild("Roll")
+local buyRemote = remotes:WaitForChild("BuyUpgrade")
+local equipRemote = remotes:WaitForChild("Equip")
+local unequipRemote = remotes:WaitForChild("Unequip")
+local equipBestRemote = remotes:WaitForChild("EquipBest")
+local sellDupesRemote = remotes:WaitForChild("SellDupes")
+local toggleAutoRemote = remotes:WaitForChild("ToggleAuto")
+local stateRemote = remotes:WaitForChild("StateChanged")
+local rollResultRemote = remotes:WaitForChild("RollResult")
+local tickerRemote = remotes:WaitForChild("Ticker")
+
+local lastRollAt = 0
+local latestState = nil
+
+local ui
+ui = UI.new({
+	OnRoll = function()
+		-- mirror the server cooldown so we don't spam remotes it would reject
+		local cooldown = latestState and latestState.Stats.RollCooldown or 3
+		if os.clock() - lastRollAt < cooldown then
+			return
+		end
+		lastRollAt = os.clock()
+		rollRemote:FireServer()
+		ui:StartCooldown(cooldown)
+	end,
+	OnBuy = function(nodeId)
+		buyRemote:FireServer(nodeId)
+	end,
+	OnEquip = function(key)
+		equipRemote:FireServer(key)
+	end,
+	OnUnequip = function(key)
+		unequipRemote:FireServer(key)
+	end,
+	OnEquipBest = function()
+		equipBestRemote:FireServer()
+	end,
+	OnSellDupes = function(target)
+		sellDupesRemote:FireServer(target)
+	end,
+	OnToggleAuto = function()
+		toggleAutoRemote:FireServer()
+	end,
+})
+
+local cards = Cards.new(ui.ScreenGui)
+
+stateRemote.OnClientEvent:Connect(function(state)
+	latestState = state
+	ui:Update(state)
+end)
+
+rollResultRemote.OnClientEvent:Connect(function(payload)
+	cards:ShowRollResult(payload)
+end)
+
+tickerRemote.OnClientEvent:Connect(function(text)
+	ui:ShowTicker(text)
+end)
+]]></string>
+          </Properties>
+        </Item>
+        <Item class="ModuleScript" referent="18">
+          <Properties>
+            <string name="Name">UI</string>
+            <string name="Source"><![CDATA[-- HUD (coins / roll button / auto toggle), the collection panel, per-player
+-- upgrade pad billboards, and the announcement ticker. Built entirely from
+-- code; :Update(state) refreshes everything from the latest server state.
+
+local Players = game:GetService("Players")
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local TweenService = game:GetService("TweenService")
+
+local Shared = ReplicatedStorage:WaitForChild("Shared")
+local Config = require(Shared:WaitForChild("Config"))
+local Format = require(Shared:WaitForChild("Format"))
+
+local COLORS = {
+	Panel = Color3.fromRGB(30, 22, 48),
+	PanelLight = Color3.fromRGB(48, 38, 72),
+	Purple = Color3.fromRGB(150, 90, 255),
+	PurpleDark = Color3.fromRGB(40, 20, 8),
+	Gold = Color3.fromRGB(255, 215, 60),
+	Green = Color3.fromRGB(80, 200, 120),
+	Red = Color3.fromRGB(235, 87, 87),
+	Text = Color3.fromRGB(240, 238, 248),
+	TextDim = Color3.fromRGB(160, 152, 185),
+	Disabled = Color3.fromRGB(70, 64, 95),
+}
+
+local function create(className, props)
+	local instance: any = Instance.new(className)
+	for key, value in props do
+		if key ~= "Parent" then
+			instance[key] = value
+		end
+	end
+	instance.Parent = props.Parent
+	return instance
+end
+
+local function addCorner(parent, radius)
+	create("UICorner", { CornerRadius = radius or UDim.new(0, 12), Parent = parent })
+end
+
+local UI = {}
+UI.__index = UI
+
+function UI.new(callbacks)
+	local self = setmetatable({}, UI)
+	self.Callbacks = callbacks
+	self.State = nil
+	self.Cards = {} -- latest full card collection from the server
+	self.PadBillboards = {}
+	self.CollectionDirty = false
+	self.RebuildScheduled = false
+	self.TickerToken = 0
+	self:Build()
+	return self
+end
+
+function UI:Build()
+	local playerGui = Players.LocalPlayer:WaitForChild("PlayerGui")
+	local screenGui = create("ScreenGui", {
+		Name = "ECIUI",
+		ResetOnSpawn = false,
+		ZIndexBehavior = Enum.ZIndexBehavior.Sibling,
+		Parent = playerGui,
+	})
+	self.ScreenGui = screenGui
+
+	self.ClickSound = create("Sound", { SoundId = "rbxasset://sounds/electronicpingshort.wav", Volume = 0.35, Parent = screenGui })
+	self.BuySound = create("Sound", { SoundId = "rbxasset://sounds/electronicpingshort.wav", Volume = 0.5, PlaybackSpeed = 0.55, Parent = screenGui })
+
+	-- top stats card
+	local stats = create("Frame", {
+		AnchorPoint = Vector2.new(0.5, 0),
+		Position = UDim2.new(0.5, 0, 0, 10),
+		Size = UDim2.fromOffset(340, 92),
+		BackgroundColor3 = COLORS.Panel,
+		BackgroundTransparency = 0.08,
+		Parent = screenGui,
+	})
+	addCorner(stats, UDim.new(0, 16))
+	create("UIStroke", { Color = COLORS.Purple, Thickness = 2, Parent = stats })
+
+	self.CoinsLabel = create("TextLabel", {
+		BackgroundTransparency = 1,
+		Position = UDim2.new(0, 0, 0, 6),
+		Size = UDim2.new(1, 0, 0, 38),
+		Font = Enum.Font.GothamBlack,
+		TextSize = 30,
+		TextColor3 = COLORS.Gold,
+		Text = "🪙 0",
+		Parent = stats,
+	})
+	self.RateLabel = create("TextLabel", {
+		BackgroundTransparency = 1,
+		Position = UDim2.new(0, 0, 0, 44),
+		Size = UDim2.new(1, 0, 0, 20),
+		Font = Enum.Font.GothamMedium,
+		TextSize = 14,
+		TextColor3 = COLORS.Text,
+		Text = "+1 coins/s",
+		Parent = stats,
+	})
+	self.RollsLabel = create("TextLabel", {
+		BackgroundTransparency = 1,
+		Position = UDim2.new(0, 0, 0, 64),
+		Size = UDim2.new(1, 0, 0, 20),
+		Font = Enum.Font.Gotham,
+		TextSize = 13,
+		TextColor3 = COLORS.TextDim,
+		Text = "Rolls: 0",
+		Parent = stats,
+	})
+
+	-- ticker (announcements)
+	self.TickerLabel = create("TextLabel", {
+		BackgroundTransparency = 1,
+		AnchorPoint = Vector2.new(0.5, 0),
+		Position = UDim2.new(0.5, 0, 0, 108),
+		Size = UDim2.new(0, 500, 0, 22),
+		Font = Enum.Font.GothamBold,
+		TextSize = 16,
+		TextColor3 = COLORS.Gold,
+		TextTransparency = 1,
+		Text = "",
+		Parent = screenGui,
+	})
+
+	-- ROLL button
+	local rollButton = create("TextButton", {
+		AnchorPoint = Vector2.new(0.5, 1),
+		Position = UDim2.new(0.5, 0, 1, -24),
+		Size = UDim2.fromOffset(230, 84),
+		BackgroundColor3 = COLORS.Purple,
+		Font = Enum.Font.GothamBlack,
+		TextSize = 30,
+		TextColor3 = COLORS.Text,
+		Text = "ROLL",
+		AutoButtonColor = true,
+		Parent = screenGui,
+	})
+	addCorner(rollButton, UDim.new(0, 18))
+	create("UIStroke", { Color = Color3.fromRGB(210, 170, 255), Thickness = 3, Parent = rollButton })
+	create("UIGradient", {
+		Color = ColorSequence.new(Color3.fromRGB(170, 110, 255), Color3.fromRGB(110, 50, 220)),
+		Rotation = 90,
+		Parent = rollButton,
+	})
+	self.RollButton = rollButton
+
+	self.MultiBadge = create("TextLabel", {
+		BackgroundColor3 = COLORS.Gold,
+		AnchorPoint = Vector2.new(1, 0),
+		Position = UDim2.new(1, 6, 0, -6),
+		Size = UDim2.fromOffset(40, 22),
+		Font = Enum.Font.GothamBlack,
+		TextSize = 14,
+		TextColor3 = Color3.fromRGB(60, 40, 0),
+		Text = "x2",
+		Visible = false,
+		Parent = rollButton,
+	})
+	addCorner(self.MultiBadge, UDim.new(0, 8))
+
+	-- cooldown fill (shrinks left as cooldown runs)
+	self.CooldownFill = create("Frame", {
+		BackgroundColor3 = Color3.fromRGB(0, 0, 0),
+		BackgroundTransparency = 0.55,
+		AnchorPoint = Vector2.new(1, 1),
+		Position = UDim2.new(1, 0, 1, 0),
+		Size = UDim2.new(0, 0, 1, 0),
+		ZIndex = 2,
+		Parent = rollButton,
+	})
+	addCorner(self.CooldownFill, UDim.new(0, 18))
+
+	rollButton.Activated:Connect(function()
+		self.ClickSound:Play()
+		self.Callbacks.OnRoll()
+	end)
+
+	-- AUTO toggle (appears once unlocked)
+	self.AutoButton = create("TextButton", {
+		AnchorPoint = Vector2.new(0, 1),
+		Position = UDim2.new(0.5, 130, 1, -42),
+		Size = UDim2.fromOffset(110, 48),
+		BackgroundColor3 = COLORS.Disabled,
+		Font = Enum.Font.GothamBold,
+		TextSize = 16,
+		TextColor3 = COLORS.Text,
+		Text = "AUTO: OFF",
+		Visible = false,
+		Parent = screenGui,
+	})
+	addCorner(self.AutoButton, UDim.new(0, 14))
+	self.AutoButton.Activated:Connect(function()
+		self.Callbacks.OnToggleAuto()
+	end)
+
+	self:BuildCollection()
+	task.spawn(function()
+		self:BuildPadBillboards()
+	end)
+end
+
+-- ===== collection panel ====================================================
+
+function UI:BuildCollection()
+	local toggle = create("TextButton", {
+		AnchorPoint = Vector2.new(0, 0.5),
+		Position = UDim2.new(0, 12, 0.5, 0),
+		Size = UDim2.fromOffset(110, 48),
+		BackgroundColor3 = COLORS.Purple,
+		Font = Enum.Font.GothamBold,
+		TextSize = 17,
+		TextColor3 = COLORS.Text,
+		Text = "🃏 Cards",
+		Parent = self.ScreenGui,
+	})
+	addCorner(toggle, UDim.new(0, 14))
+
+	local panel = create("Frame", {
+		AnchorPoint = Vector2.new(0, 0.5),
+		Position = UDim2.new(0, 132, 0.5, 0),
+		Size = UDim2.new(0, 380, 0.85, 0),
+		BackgroundColor3 = COLORS.Panel,
+		BackgroundTransparency = 0.05,
+		Visible = false,
+		Parent = self.ScreenGui,
+	})
+	create("UISizeConstraint", { MaxSize = Vector2.new(380, 560), Parent = panel })
+	addCorner(panel, UDim.new(0, 16))
+	create("UIStroke", { Color = COLORS.PanelLight, Thickness = 2, Parent = panel })
+	self.CollectionPanel = panel
+
+	self.SlotsLabel = create("TextLabel", {
+		BackgroundTransparency = 1,
+		Position = UDim2.new(0, 16, 0, 8),
+		Size = UDim2.new(1, -32, 0, 24),
+		Font = Enum.Font.GothamBlack,
+		TextSize = 18,
+		TextColor3 = COLORS.Text,
+		TextXAlignment = Enum.TextXAlignment.Left,
+		Text = "CARDS — equipped 0/3",
+		Parent = panel,
+	})
+
+	local equipBest = create("TextButton", {
+		Position = UDim2.new(0, 16, 0, 38),
+		Size = UDim2.fromOffset(120, 32),
+		BackgroundColor3 = COLORS.Green,
+		Font = Enum.Font.GothamBold,
+		TextSize = 14,
+		TextColor3 = COLORS.Text,
+		Text = "Equip Best",
+		Parent = panel,
+	})
+	addCorner(equipBest, UDim.new(0, 10))
+	equipBest.Activated:Connect(function()
+		self.Callbacks.OnEquipBest()
+	end)
+
+	local sellDupes = create("TextButton", {
+		Position = UDim2.new(0, 146, 0, 38),
+		Size = UDim2.fromOffset(130, 32),
+		BackgroundColor3 = COLORS.Gold,
+		Font = Enum.Font.GothamBold,
+		TextSize = 14,
+		TextColor3 = Color3.fromRGB(60, 40, 0),
+		Text = "Sell All Dupes",
+		Parent = panel,
+	})
+	addCorner(sellDupes, UDim.new(0, 10))
+	sellDupes.Activated:Connect(function()
+		self.BuySound:Play()
+		self.Callbacks.OnSellDupes("ALL")
+	end)
+
+	self.CollectionScroll = create("ScrollingFrame", {
+		BackgroundTransparency = 1,
+		BorderSizePixel = 0,
+		Position = UDim2.new(0, 10, 0, 80),
+		Size = UDim2.new(1, -20, 1, -90),
+		CanvasSize = UDim2.new(0, 0, 0, 0),
+		AutomaticCanvasSize = Enum.AutomaticSize.Y,
+		ScrollBarThickness = 6,
+		ScrollingDirection = Enum.ScrollingDirection.Y,
+		Parent = panel,
+	})
+	create("UIListLayout", {
+		SortOrder = Enum.SortOrder.LayoutOrder,
+		Padding = UDim.new(0, 6),
+		Parent = self.CollectionScroll,
+	})
+
+	toggle.Activated:Connect(function()
+		panel.Visible = not panel.Visible
+		toggle.Text = panel.Visible and "✕ Close" or "🃏 Cards"
+		if panel.Visible then
+			self:RebuildCollection()
+		end
+	end)
+end
+
+function UI:RebuildCollection()
+	if not self.CollectionPanel.Visible or not self.State then
+		return
+	end
+
+	for _, child in self.CollectionScroll:GetChildren() do
+		if child:IsA("Frame") then
+			child:Destroy()
+		end
+	end
+
+	local equippedSet = {}
+	for _, key in self.State.Equipped do
+		equippedSet[key] = true
+	end
+
+	local sorted = {}
+	for key, card in self.Cards do
+		table.insert(sorted, { Key = key, Card = card })
+	end
+	table.sort(sorted, function(a, b)
+		return a.Card.Boost > b.Card.Boost
+	end)
+
+	for order, entry in sorted do
+		local key, card = entry.Key, entry.Card
+		local tier = Config.TierByName[card.Tier] or Config.Tiers[1]
+		local isEquipped = equippedSet[key] == true
+
+		local row = create("Frame", {
+			Size = UDim2.new(1, -8, 0, 56),
+			BackgroundColor3 = if isEquipped then COLORS.PanelLight else COLORS.Panel,
+			LayoutOrder = order,
+			Parent = self.CollectionScroll,
+		})
+		addCorner(row, UDim.new(0, 10))
+		create("UIStroke", { Color = tier.Color, Thickness = if isEquipped then 2 else 1, Parent = row })
+
+		if card.UserId and card.UserId > 0 then
+			local thumb = create("ImageLabel", {
+				BackgroundColor3 = Color3.fromRGB(20, 14, 34),
+				Position = UDim2.new(0, 6, 0.5, -21),
+				Size = UDim2.fromOffset(42, 42),
+				Image = ("rbxthumb://type=AvatarHeadShot&id=%d&w=48&h=48"):format(card.UserId),
+				Parent = row,
+			})
+			addCorner(thumb, UDim.new(1, 0))
+		end
+
+		create("TextLabel", {
+			BackgroundTransparency = 1,
+			Position = UDim2.new(0, 56, 0, 6),
+			Size = UDim2.new(1, -200, 0, 20),
+			Font = Enum.Font.GothamBold,
+			TextSize = 14,
+			TextColor3 = COLORS.Text,
+			TextXAlignment = Enum.TextXAlignment.Left,
+			TextTruncate = Enum.TextTruncate.AtEnd,
+			Text = (card.DisplayName or card.Name) .. (card.Count > 1 and ("  x" .. card.Count) or ""),
+			Parent = row,
+		})
+		create("TextLabel", {
+			BackgroundTransparency = 1,
+			Position = UDim2.new(0, 56, 0, 28),
+			Size = UDim2.new(1, -200, 0, 18),
+			Font = Enum.Font.Gotham,
+			TextSize = 12,
+			TextColor3 = tier.Color,
+			TextXAlignment = Enum.TextXAlignment.Left,
+			Text = ("%s  •  +%s/s"):format(card.Tier, Format(card.Boost)),
+			Parent = row,
+		})
+
+		local equipButton = create("TextButton", {
+			AnchorPoint = Vector2.new(1, 0.5),
+			Position = UDim2.new(1, -8, 0.5, 0),
+			Size = UDim2.fromOffset(72, 34),
+			BackgroundColor3 = if isEquipped then COLORS.Red else COLORS.Green,
+			Font = Enum.Font.GothamBold,
+			TextSize = 13,
+			TextColor3 = COLORS.Text,
+			Text = if isEquipped then "Unequip" else "Equip",
+			Parent = row,
+		})
+		addCorner(equipButton, UDim.new(0, 8))
+		equipButton.Activated:Connect(function()
+			if isEquipped then
+				self.Callbacks.OnUnequip(key)
+			else
+				self.Callbacks.OnEquip(key)
+			end
+		end)
+
+		if card.Count > 1 then
+			local sellButton = create("TextButton", {
+				AnchorPoint = Vector2.new(1, 0.5),
+				Position = UDim2.new(1, -86, 0.5, 0),
+				Size = UDim2.fromOffset(56, 34),
+				BackgroundColor3 = COLORS.Gold,
+				Font = Enum.Font.GothamBold,
+				TextSize = 12,
+				TextColor3 = Color3.fromRGB(60, 40, 0),
+				Text = "Sell",
+				Parent = row,
+			})
+			addCorner(sellButton, UDim.new(0, 8))
+			sellButton.Activated:Connect(function()
+				self.BuySound:Play()
+				self.Callbacks.OnSellDupes(key)
+			end)
+		end
+	end
+end
+
+function UI:ScheduleCollectionRebuild()
+	if self.RebuildScheduled then
+		return
+	end
+	self.RebuildScheduled = true
+	task.delay(0.3, function()
+		self.RebuildScheduled = false
+		self:RebuildCollection()
+	end)
+end
+
+-- ===== upgrade pad billboards ==============================================
+
+function UI:BuildPadBillboards()
+	local tree = workspace:WaitForChild("UpgradeTree", 30)
+	if not tree then
+		return
+	end
+	for _, pad in tree:GetChildren() do
+		local nodeId = pad:GetAttribute("NodeId")
+		local treeNode = nodeId and Config.NodeById[nodeId]
+		if not treeNode then
+			continue
+		end
+
+		local billboard = create("BillboardGui", {
+			Adornee = pad,
+			Size = UDim2.fromOffset(170, 92),
+			StudsOffset = Vector3.new(0, 4.6, 0),
+			MaxDistance = 70,
+			Parent = self.ScreenGui,
+		})
+		local bg = create("Frame", {
+			BackgroundColor3 = COLORS.Panel,
+			BackgroundTransparency = 0.2,
+			Size = UDim2.new(1, 0, 1, 0),
+			Parent = billboard,
+		})
+		addCorner(bg, UDim.new(0, 10))
+		create("TextLabel", {
+			BackgroundTransparency = 1,
+			Position = UDim2.new(0, 6, 0, 4),
+			Size = UDim2.new(1, -12, 0, 22),
+			Font = Enum.Font.GothamBold,
+			TextSize = 14,
+			TextColor3 = Config.BranchColors[treeNode.Branch] or COLORS.Text,
+			TextTruncate = Enum.TextTruncate.AtEnd,
+			Text = treeNode.Name,
+			Parent = bg,
+		})
+		create("TextLabel", {
+			BackgroundTransparency = 1,
+			Position = UDim2.new(0, 6, 0, 26),
+			Size = UDim2.new(1, -12, 0, 30),
+			Font = Enum.Font.Gotham,
+			TextSize = 11,
+			TextWrapped = true,
+			TextColor3 = COLORS.TextDim,
+			Text = treeNode.Desc,
+			Parent = bg,
+		})
+		local costLabel = create("TextLabel", {
+			BackgroundTransparency = 1,
+			Position = UDim2.new(0, 6, 1, -28),
+			Size = UDim2.new(1, -12, 0, 24),
+			Font = Enum.Font.GothamBlack,
+			TextSize = 14,
+			TextColor3 = COLORS.Gold,
+			Text = "",
+			Parent = bg,
+		})
+		self.PadBillboards[nodeId] = costLabel
+	end
+	if self.State then
+		self:UpdatePads()
+	end
+end
+
+function UI:UpdatePads()
+	local state = self.State
+	for nodeId, costLabel in self.PadBillboards do
+		local treeNode = Config.NodeById[nodeId]
+		local level = state.Upgrades[nodeId] or 0
+		local locked = treeNode.Requires and (state.Upgrades[treeNode.Requires] or 0) < 1
+
+		if treeNode.MaxLevel and level >= treeNode.MaxLevel then
+			costLabel.Text = "✓ OWNED"
+			costLabel.TextColor3 = COLORS.Green
+		elseif locked then
+			local parent = Config.NodeById[treeNode.Requires]
+			costLabel.Text = "🔒 needs " .. parent.Name
+			costLabel.TextColor3 = COLORS.TextDim
+		else
+			local cost = Config.GetNodeCost(treeNode, level)
+			local prefix = if treeNode.MaxLevel == nil then ("Lv %d  •  "):format(level) else ""
+			costLabel.Text = prefix .. "🪙 " .. Format(cost)
+			costLabel.TextColor3 = if state.Coins >= cost then COLORS.Green else COLORS.Red
+		end
+	end
+end
+
+-- ===== ticker / cooldown ===================================================
+
+function UI:ShowTicker(text)
+	self.TickerToken += 1
+	local token = self.TickerToken
+	self.TickerLabel.Text = text
+	self.TickerLabel.TextTransparency = 0
+	task.delay(4, function()
+		if self.TickerToken == token then
+			TweenService:Create(self.TickerLabel, TweenInfo.new(0.6), { TextTransparency = 1 }):Play()
+		end
+	end)
+end
+
+function UI:StartCooldown(duration)
+	self.CooldownFill.Size = UDim2.new(1, 0, 1, 0)
+	TweenService:Create(self.CooldownFill, TweenInfo.new(duration, Enum.EasingStyle.Linear), {
+		Size = UDim2.new(0, 0, 1, 0),
+	}):Play()
+end
+
+-- ===== state refresh =======================================================
+
+function UI:Update(state)
+	local previous = self.State
+	self.State = state
+	if state.Cards then
+		self.Cards = state.Cards
+		self:ScheduleCollectionRebuild()
+	end
+
+	if previous then
+		local prevLevels = 0
+		local newLevels = 0
+		for _, level in previous.Upgrades do
+			prevLevels += level
+		end
+		for _, level in state.Upgrades do
+			newLevels += level
+		end
+		if newLevels > prevLevels then
+			self.BuySound:Play()
+		end
+	end
+
+	self.CoinsLabel.Text = "🪙 " .. Format(state.Coins)
+	self.RateLabel.Text = ("+%s coins/s"):format(Format(state.CoinsPerSec))
+	local bestTier = Config.Tiers[state.BestTier]
+	self.RollsLabel.Text = ("Rolls: %s%s"):format(
+		Format(state.TotalRolls),
+		bestTier and ("  •  Best: " .. bestTier.Name) or ""
+	)
+
+	self.MultiBadge.Visible = state.Stats.MultiRoll > 1
+	self.MultiBadge.Text = "x" .. state.Stats.MultiRoll
+
+	self.AutoButton.Visible = state.Stats.AutoUnlocked
+	self.AutoButton.Text = state.AutoOn and "AUTO: ON" or "AUTO: OFF"
+	self.AutoButton.BackgroundColor3 = if state.AutoOn then COLORS.Green else COLORS.Disabled
+
+	self.SlotsLabel.Text = ("CARDS — equipped %d/%d"):format(#state.Equipped, state.Stats.EquipSlots)
+
+	-- remotes deep-copy tables, so compare equipped by content, not identity
+	if previous and table.concat(state.Equipped, ",") ~= table.concat(previous.Equipped, ",") then
+		self:ScheduleCollectionRebuild()
+	end
+	self:UpdatePads()
+end
+
+return UI
+]]></string>
+          </Properties>
+        </Item>
+      </Item>
+    </Item>
+  </Item>
+  <Item class="Workspace" referent="19">
+    <Properties>
+      <string name="Name">Workspace</string>
+      <bool name="NeedsPivotMigration">false</bool>
+    </Properties>
+    <Item class="Part" referent="20">
+      <Properties>
+        <string name="Name">Baseplate</string>
+        <bool name="Anchored">true</bool>
+        <token name="BottomSurface">0</token>
+        <Color3uint8 name="Color3uint8">2169904</Color3uint8>
+        <bool name="Locked">true</bool>
+        <token name="Material">800</token>
+        <Vector3 name="Position">
+          <X>0</X>
+          <Y>-8</Y>
+          <Z>0</Z>
+        </Vector3>
+        <Vector3 name="size">
+          <X>512</X>
+          <Y>16</Y>
+          <Z>512</Z>
+        </Vector3>
+        <token name="TopSurface">0</token>
+      </Properties>
+    </Item>
+    <Item class="SpawnLocation" referent="21">
+      <Properties>
+        <string name="Name">SpawnLocation</string>
+        <bool name="Anchored">true</bool>
+        <Color3uint8 name="Color3uint8">9853439</Color3uint8>
+        <int name="Duration">0</int>
+        <token name="Material">272</token>
+        <Vector3 name="Position">
+          <X>0</X>
+          <Y>0.5</Y>
+          <Z>0</Z>
+        </Vector3>
+        <Vector3 name="size">
+          <X>12</X>
+          <Y>1</Y>
+          <Z>12</Z>
+        </Vector3>
+        <token name="TopSurface">0</token>
+      </Properties>
+    </Item>
+  </Item>
+</roblox>

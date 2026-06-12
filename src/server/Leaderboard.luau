@@ -1,5 +1,5 @@
 -- Global top-10 leaderboard: a physical board near spawn showing the
--- players who have earned the most cash of all time (OrderedDataStore).
+-- players who have earned the most coins of all time (OrderedDataStore).
 
 local DataStoreService = game:GetService("DataStoreService")
 local Players = game:GetService("Players")
@@ -13,7 +13,7 @@ local Leaderboard = {}
 
 local orderedStore = nil
 pcall(function()
-	orderedStore = DataStoreService:GetOrderedDataStore("TotalEarned_v1")
+	orderedStore = DataStoreService:GetOrderedDataStore("ECITotalEarned_v1")
 end)
 
 local nameCache = {}
@@ -54,8 +54,8 @@ local function createBoard()
 	board.Name = "GlobalLeaderboard"
 	board.Anchored = true
 	board.Size = Vector3.new(16, 9, 1)
-	board.Position = Vector3.new(0, 7.5, -30)
-	board.Color = Color3.fromRGB(28, 30, 40)
+	board.Position = Vector3.new(34, 7.5, -20)
+	board.Color = Color3.fromRGB(25, 18, 40)
 	board.Material = Enum.Material.SmoothPlastic
 
 	local gui = Instance.new("SurfaceGui")
@@ -69,8 +69,8 @@ local function createBoard()
 	title.Size = UDim2.new(1, 0, 0, 56)
 	title.Font = Enum.Font.GothamBlack
 	title.TextSize = 36
-	title.TextColor3 = Color3.fromRGB(255, 196, 60)
-	title.Text = "🏆 TOP EARNERS"
+	title.TextColor3 = Color3.fromRGB(255, 215, 60)
+	title.Text = "🏆 TOP COLLECTORS"
 	title.Parent = gui
 
 	local list = Instance.new("Frame")
@@ -120,7 +120,7 @@ function Leaderboard.Start()
 					local entry = page[i]
 					if entry then
 						local userId = tonumber(entry.key) or 0
-						rowLabels[i].Text = ("%d.  %s  —  $%s"):format(i, getName(userId), Format(entry.value))
+						rowLabels[i].Text = ("%d.  %s  —  %s coins"):format(i, getName(userId), Format(entry.value))
 					else
 						rowLabels[i].Text = ""
 					end

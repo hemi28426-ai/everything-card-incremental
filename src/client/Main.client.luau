@@ -1,45 +1,70 @@
--- Click Empire — client entry point.
--- Wires the UI to the server remotes. No game logic lives here on purpose:
--- the server is the source of truth, the client just displays it.
+-- Everything Card Incremental — client entry point.
+-- Wires the UI to the server remotes. No game logic lives here: the server
+-- decides every roll, purchase, and coin; the client just displays them.
 
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 
-local Shared = ReplicatedStorage:WaitForChild("Shared")
-local Config = require(Shared:WaitForChild("Config"))
 local UI = require(script.Parent:WaitForChild("UI"))
+local Cards = require(script.Parent:WaitForChild("Cards"))
 
 local remotes = ReplicatedStorage:WaitForChild("Remotes")
-local clickRemote = remotes:WaitForChild("Click")
+local rollRemote = remotes:WaitForChild("Roll")
 local buyRemote = remotes:WaitForChild("BuyUpgrade")
-local rebirthRemote = remotes:WaitForChild("Rebirth")
+local equipRemote = remotes:WaitForChild("Equip")
+local unequipRemote = remotes:WaitForChild("Unequip")
+local equipBestRemote = remotes:WaitForChild("EquipBest")
+local sellDupesRemote = remotes:WaitForChild("SellDupes")
+local toggleAutoRemote = remotes:WaitForChild("ToggleAuto")
 local stateRemote = remotes:WaitForChild("StateChanged")
+local rollResultRemote = remotes:WaitForChild("RollResult")
+local tickerRemote = remotes:WaitForChild("Ticker")
 
--- Mirror the server's click rate limit so we don't waste network traffic
--- firing clicks the server would ignore anyway.
-local windowStart = 0
-local windowClicks = 0
+local lastRollAt = 0
+local latestState = nil
 
-local ui = UI.new({
-	OnClick = function()
-		local now = os.clock()
-		if now - windowStart >= 1 then
-			windowStart = now
-			windowClicks = 0
-		end
-		if windowClicks >= Config.MaxClicksPerSecond then
+local ui
+ui = UI.new({
+	OnRoll = function()
+		-- mirror the server cooldown so we don't spam remotes it would reject
+		local cooldown = latestState and latestState.Stats.RollCooldown or 3
+		if os.clock() - lastRollAt < cooldown then
 			return
 		end
-		windowClicks += 1
-		clickRemote:FireServer()
+		lastRollAt = os.clock()
+		rollRemote:FireServer()
+		ui:StartCooldown(cooldown)
 	end,
-	OnBuy = function(upgradeId)
-		buyRemote:FireServer(upgradeId)
+	OnBuy = function(nodeId)
+		buyRemote:FireServer(nodeId)
 	end,
-	OnRebirth = function()
-		rebirthRemote:FireServer()
+	OnEquip = function(key)
+		equipRemote:FireServer(key)
+	end,
+	OnUnequip = function(key)
+		unequipRemote:FireServer(key)
+	end,
+	OnEquipBest = function()
+		equipBestRemote:FireServer()
+	end,
+	OnSellDupes = function(target)
+		sellDupesRemote:FireServer(target)
+	end,
+	OnToggleAuto = function()
+		toggleAutoRemote:FireServer()
 	end,
 })
 
+local cards = Cards.new(ui.ScreenGui)
+
 stateRemote.OnClientEvent:Connect(function(state)
+	latestState = state
 	ui:Update(state)
+end)
+
+rollResultRemote.OnClientEvent:Connect(function(payload)
+	cards:ShowRollResult(payload)
+end)
+
+tickerRemote.OnClientEvent:Connect(function(text)
+	ui:ShowTicker(text)
 end)
