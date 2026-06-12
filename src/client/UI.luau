@@ -172,7 +172,10 @@ function UI:Build()
 	})
 	addCorner(self.CooldownFill, UDim.new(0, 18))
 
+	local rollScale = create("UIScale", { Parent = rollButton })
 	rollButton.Activated:Connect(function()
+		rollScale.Scale = 0.92
+		TweenService:Create(rollScale, TweenInfo.new(0.2, Enum.EasingStyle.Back, Enum.EasingDirection.Out), { Scale = 1 }):Play()
 		self.ClickSound:Play()
 		self.Callbacks.OnRoll()
 	end)
@@ -420,6 +423,29 @@ function UI:RebuildCollection()
 		return a.Card.Boost > b.Card.Boost
 	end)
 
+	if #sorted == 0 then
+		local hint = create("Frame", {
+			Size = UDim2.new(1, -8, 0, 56),
+			BackgroundColor3 = COLORS.Panel,
+			Parent = self.CollectionScroll,
+		})
+		addCorner(hint, UDim.new(0, 10))
+		create("TextLabel", {
+			BackgroundTransparency = 1,
+			Size = UDim2.new(1, -16, 1, 0),
+			Position = UDim2.new(0, 8, 0, 0),
+			Font = Enum.Font.GothamBold,
+			TextSize = 14,
+			TextWrapped = true,
+			TextColor3 = COLORS.TextDim,
+			Text = "No cards yet — press ROLL to pull your first one!",
+			Parent = hint,
+		})
+		return
+	end
+
+	local slotsFull = #self.State.Equipped >= self.State.Stats.EquipSlots
+
 	for order, entry in sorted do
 		local key, card = entry.Key, entry.Card
 		local tier = Config.TierByName[card.Tier] or Config.Tiers[1]
@@ -473,7 +499,10 @@ function UI:RebuildCollection()
 			AnchorPoint = Vector2.new(1, 0.5),
 			Position = UDim2.new(1, -8, 0.5, 0),
 			Size = UDim2.fromOffset(72, 34),
-			BackgroundColor3 = if isEquipped then COLORS.Red else COLORS.Green,
+			BackgroundColor3 = if isEquipped
+				then COLORS.Red
+				elseif slotsFull then COLORS.Disabled
+				else COLORS.Green,
 			Font = Enum.Font.GothamBold,
 			TextSize = 13,
 			TextColor3 = COLORS.Text,
@@ -651,6 +680,13 @@ function UI:UpdatePads()
 			continue
 		end
 
+		-- pads you own glow warm gold (local-only color change)
+		if entry.Trim then
+			entry.Trim.Color = if level >= 1
+				then Color3.fromRGB(255, 240, 160)
+				else (Config.BranchColors[treeNode.Branch] or Color3.fromRGB(200, 200, 200))
+		end
+
 		if treeNode.MaxLevel and level >= treeNode.MaxLevel then
 			entry.CostLabel.Text = "✓ OWNED"
 			entry.CostLabel.TextColor3 = Color3.fromRGB(10, 60, 25)
@@ -697,6 +733,11 @@ function UI:Update(state)
 	if state.Cards then
 		self.Cards = state.Cards
 		self:ScheduleCollectionRebuild()
+	end
+
+	if not self.WelcomedOnce and state.TotalRolls == 0 then
+		self.WelcomedOnce = true
+		self:ShowTicker("👇 Press ROLL to pull your first card!")
 	end
 
 	if previous then

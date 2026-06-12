@@ -110,6 +110,12 @@ local function buildTv(folder)
 		Parent = screen,
 	})
 
+	local glow = Instance.new("PointLight")
+	glow.Color = Color3.fromRGB(170, 110, 255)
+	glow.Brightness = 2
+	glow.Range = 32
+	glow.Parent = screen
+
 	local gui = Instance.new("SurfaceGui")
 	gui.Face = Enum.NormalId.Back -- faces spawn
 	gui.SizingMode = Enum.SurfaceGuiSizingMode.PixelsPerStud
@@ -151,11 +157,27 @@ local function buildTv(folder)
 	return ticker
 end
 
+local function buildPlaza(folder)
+	local ring = Instance.new("Part")
+	ring.Name = "SpawnPlaza"
+	ring.Shape = Enum.PartType.Cylinder
+	ring.Anchored = true
+	ring.CanCollide = false
+	ring.Size = Vector3.new(0.3, 22, 22)
+	ring.CFrame = CFrame.new(0, 0.05, 0) * CFrame.Angles(0, 0, math.rad(90))
+	ring.Color = Color3.fromRGB(150, 90, 255)
+	ring.Material = Enum.Material.Neon
+	ring.Transparency = 0.45
+	ring.Parent = folder
+end
+
 -- Builds everything. onBuy(player, nodeId) is called when a pad prompt fires.
 -- Returns the TV ticker label so the server can announce big pulls on it.
 function TreeBuilder.Build(onBuy)
 	local folder = Instance.new("Folder")
 	folder.Name = "UpgradeTree"
+
+	buildPlaza(folder)
 
 	for _, treeNode in Config.Tree do
 		buildPad(treeNode, folder, onBuy)

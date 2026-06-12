@@ -143,6 +143,10 @@ local function addCardToCollection(data, stats, card)
 		Flavor = card.Flavor,
 		Count = 1,
 	}
+	-- new players shouldn't have to find the equip menu to start earning
+	if #data.Equipped < stats.EquipSlots then
+		table.insert(data.Equipped, key)
+	end
 	return { IsNew = true, Count = 1 }
 end
 

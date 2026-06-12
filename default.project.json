@@ -55,6 +55,22 @@
       "$properties": {
         "Brightness": 2.5,
         "ClockTime": 17.8
+      },
+      "Atmosphere": {
+        "$className": "Atmosphere",
+        "$properties": {
+          "Density": 0.3,
+          "Haze": 1.5,
+          "Color": [0.58, 0.45, 0.78]
+        }
+      },
+      "Bloom": {
+        "$className": "BloomEffect",
+        "$properties": {
+          "Intensity": 0.8,
+          "Size": 24,
+          "Threshold": 1.05
+        }
       }
     }
   }

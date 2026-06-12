@@ -5,16 +5,36 @@
       <float name="Brightness">2.5</float>
       <float name="ClockTime">17.8</float>
     </Properties>
+    <Item class="Atmosphere" referent="1">
+      <Properties>
+        <string name="Name">Atmosphere</string>
+        <Color3 name="Color">
+          <R>0.58</R>
+          <G>0.45</G>
+          <B>0.78</B>
+        </Color3>
+        <float name="Density">0.3</float>
+        <float name="Haze">1.5</float>
+      </Properties>
+    </Item>
+    <Item class="BloomEffect" referent="2">
+      <Properties>
+        <string name="Name">Bloom</string>
+        <float name="Intensity">0.8</float>
+        <float name="Size">24</float>
+        <float name="Threshold">1.05</float>
+      </Properties>
+    </Item>
   </Item>
-  <Item class="ReplicatedStorage" referent="1">
+  <Item class="ReplicatedStorage" referent="3">
     <Properties>
       <string name="Name">ReplicatedStorage</string>
     </Properties>
-    <Item class="Folder" referent="2">
+    <Item class="Folder" referent="4">
       <Properties>
         <string name="Name">Shared</string>
       </Properties>
-      <Item class="ModuleScript" referent="3">
+      <Item class="ModuleScript" referent="5">
         <Properties>
           <string name="Name">Config</string>
           <string name="Source"><![CDATA[-- Everything Card Incremental — all game tuning in one file.
@@ -243,7 +263,7 @@ return Config
 ]]></string>
         </Properties>
       </Item>
-      <Item class="ModuleScript" referent="4">
+      <Item class="ModuleScript" referent="6">
         <Properties>
           <string name="Name">Format</string>
           <string name="Source"><![CDATA[-- Formats big numbers the way incremental games do: 1532 -> "1.53K", 2.4e9 -> "2.4B"
@@ -283,15 +303,15 @@ return format
       </Item>
     </Item>
   </Item>
-  <Item class="ServerScriptService" referent="5">
+  <Item class="ServerScriptService" referent="7">
     <Properties>
       <string name="Name">ServerScriptService</string>
     </Properties>
-    <Item class="Folder" referent="6">
+    <Item class="Folder" referent="8">
       <Properties>
         <string name="Name">Server</string>
       </Properties>
-      <Item class="ModuleScript" referent="7">
+      <Item class="ModuleScript" referent="9">
         <Properties>
           <string name="Name">CardPool</string>
           <string name="Source"><![CDATA[-- Keeps rolls instant and the card supply endless:
@@ -629,7 +649,7 @@ return CardPool
 ]]></string>
         </Properties>
       </Item>
-      <Item class="ModuleScript" referent="8">
+      <Item class="ModuleScript" referent="10">
         <Properties>
           <string name="Name">DataManager</string>
           <string name="Source"><![CDATA[-- Loads and saves player progress with DataStores.
@@ -742,7 +762,7 @@ return DataManager
 ]]></string>
         </Properties>
       </Item>
-      <Item class="ModuleScript" referent="9">
+      <Item class="ModuleScript" referent="11">
         <Properties>
           <string name="Name">Leaderboard</string>
           <string name="Source"><![CDATA[-- Global top-10 leaderboard: a physical board near spawn showing the
@@ -882,7 +902,7 @@ return Leaderboard
 ]]></string>
         </Properties>
       </Item>
-      <Item class="Script" referent="10">
+      <Item class="Script" referent="12">
         <Properties>
           <string name="Name">Main</string>
           <token name="RunContext">0</token>
@@ -1031,6 +1051,10 @@ local function addCardToCollection(data, stats, card)
 		Flavor = card.Flavor,
 		Count = 1,
 	}
+	-- new players shouldn't have to find the equip menu to start earning
+	if #data.Equipped < stats.EquipSlots then
+		table.insert(data.Equipped, key)
+	end
 	return { IsNew = true, Count = 1 }
 end
 
@@ -1425,7 +1449,7 @@ print(("[%s] server started"):format(Config.GameName))
 ]]></string>
         </Properties>
       </Item>
-      <Item class="ModuleScript" referent="11">
+      <Item class="ModuleScript" referent="13">
         <Properties>
           <string name="Name">Scanner</string>
           <string name="Source"><![CDATA[-- Scans a real Roblox account and turns it into card data.
@@ -1752,7 +1776,7 @@ return Scanner
 ]]></string>
         </Properties>
       </Item>
-      <Item class="ModuleScript" referent="12">
+      <Item class="ModuleScript" referent="14">
         <Properties>
           <string name="Name">TreeBuilder</string>
           <string name="Source"><![CDATA[-- Generates the physical world from Config: upgrade pads with glowing paths
@@ -1867,6 +1891,12 @@ local function buildTv(folder)
 		Parent = screen,
 	})
 
+	local glow = Instance.new("PointLight")
+	glow.Color = Color3.fromRGB(170, 110, 255)
+	glow.Brightness = 2
+	glow.Range = 32
+	glow.Parent = screen
+
 	local gui = Instance.new("SurfaceGui")
 	gui.Face = Enum.NormalId.Back -- faces spawn
 	gui.SizingMode = Enum.SurfaceGuiSizingMode.PixelsPerStud
@@ -1908,11 +1938,27 @@ local function buildTv(folder)
 	return ticker
 end
 
+local function buildPlaza(folder)
+	local ring = Instance.new("Part")
+	ring.Name = "SpawnPlaza"
+	ring.Shape = Enum.PartType.Cylinder
+	ring.Anchored = true
+	ring.CanCollide = false
+	ring.Size = Vector3.new(0.3, 22, 22)
+	ring.CFrame = CFrame.new(0, 0.05, 0) * CFrame.Angles(0, 0, math.rad(90))
+	ring.Color = Color3.fromRGB(150, 90, 255)
+	ring.Material = Enum.Material.Neon
+	ring.Transparency = 0.45
+	ring.Parent = folder
+end
+
 -- Builds everything. onBuy(player, nodeId) is called when a pad prompt fires.
 -- Returns the TV ticker label so the server can announce big pulls on it.
 function TreeBuilder.Build(onBuy)
 	local folder = Instance.new("Folder")
 	folder.Name = "UpgradeTree"
+
+	buildPlaza(folder)
 
 	for _, treeNode in Config.Tree do
 		buildPad(treeNode, folder, onBuy)
@@ -1933,19 +1979,19 @@ return TreeBuilder
       </Item>
     </Item>
   </Item>
-  <Item class="StarterPlayer" referent="13">
+  <Item class="StarterPlayer" referent="15">
     <Properties>
       <string name="Name">StarterPlayer</string>
     </Properties>
-    <Item class="StarterPlayerScripts" referent="14">
+    <Item class="StarterPlayerScripts" referent="16">
       <Properties>
         <string name="Name">StarterPlayerScripts</string>
       </Properties>
-      <Item class="Folder" referent="15">
+      <Item class="Folder" referent="17">
         <Properties>
           <string name="Name">Client</string>
         </Properties>
-        <Item class="ModuleScript" referent="16">
+        <Item class="ModuleScript" referent="18">
           <Properties>
             <string name="Name">Cards</string>
             <string name="Source"><![CDATA[-- Card visuals: builds card frames, the roll reveal splash, and the
@@ -2218,8 +2264,17 @@ function Cards:ShowSplash(rollCards, holdSeconds)
 	end
 
 	local width = if #rollCards <= 1 then 210 elseif #rollCards <= 3 then 180 else 150
-	for _, card in rollCards do
-		self:BuildCardFrame(card, width, self.CardRow)
+	for index, card in rollCards do
+		local frame = self:BuildCardFrame(card, width, self.CardRow)
+		-- pop-in: each card springs up in sequence
+		local scale = Instance.new("UIScale")
+		scale.Scale = 0.2
+		scale.Parent = frame
+		TweenService:Create(
+			scale,
+			TweenInfo.new(0.35, Enum.EasingStyle.Back, Enum.EasingDirection.Out, 0, false, (index - 1) * 0.08),
+			{ Scale = 1 }
+		):Play()
 	end
 
 	self.Overlay.Visible = true
@@ -2262,6 +2317,10 @@ function Cards:ShowToast(card)
 		Parent = self.ToastColumn,
 	})
 	create("UICorner", { CornerRadius = UDim.new(0, 8), Parent = toast })
+	-- slide in from invisible
+	toast.TextTransparency = 1
+	toast.BackgroundTransparency = 1
+	TweenService:Create(toast, TweenInfo.new(0.15), { TextTransparency = 0, BackgroundTransparency = 0.15 }):Play()
 	task.delay(1.6, function()
 		local tween = TweenService:Create(toast, TweenInfo.new(0.4), { TextTransparency = 1, BackgroundTransparency = 1 })
 		tween.Completed:Once(function()
@@ -2269,6 +2328,32 @@ function Cards:ShowToast(card)
 		end)
 		tween:Play()
 	end)
+end
+
+-- quick colored flash across the whole screen for big pulls
+function Cards:FlashScreen(color)
+	local flash = create("Frame", {
+		BackgroundColor3 = color,
+		BackgroundTransparency = 0.55,
+		Size = UDim2.new(1, 0, 1, 0),
+		ZIndex = 9,
+		Parent = self.ScreenGui,
+	})
+	local tween = TweenService:Create(flash, TweenInfo.new(0.5), { BackgroundTransparency = 1 })
+	tween.Completed:Once(function()
+		flash:Destroy()
+	end)
+	tween:Play()
+end
+
+-- three rising pings instead of one — the "you just hit something" sound
+function Cards:PlayFanfare(bestIndex)
+	for i = 1, 3 do
+		task.delay((i - 1) * 0.09, function()
+			self.RevealSound.PlaybackSpeed = 0.8 + bestIndex * 0.08 + i * 0.18
+			self.RevealSound:Play()
+		end)
+	end
 end
 
 -- entry point for every roll result from the server
@@ -2282,11 +2367,16 @@ function Cards:ShowRollResult(payload)
 		end
 	end
 
-	local rareIndex = Config.TierByName.Rare.Index
-	local isExciting = bestIndex >= rareIndex
+	local isExciting = bestIndex >= Config.TierByName.Rare.Index
+	local isHuge = bestIndex >= Config.TierByName.Legendary.Index
 
-	self.RevealSound.PlaybackSpeed = 0.9 + bestIndex * 0.12
-	self.RevealSound:Play()
+	if isHuge then
+		self:PlayFanfare(bestIndex)
+		self:FlashScreen(Config.Tiers[bestIndex].Color)
+	else
+		self.RevealSound.PlaybackSpeed = 0.9 + bestIndex * 0.12
+		self.RevealSound:Play()
+	end
 
 	-- auto-roll spam of commons becomes toasts; anything exciting gets the splash
 	if payload.Auto and not isExciting then
@@ -2302,7 +2392,7 @@ return Cards
 ]]></string>
           </Properties>
         </Item>
-        <Item class="LocalScript" referent="17">
+        <Item class="LocalScript" referent="19">
           <Properties>
             <string name="Name">Main</string>
             <string name="Source"><![CDATA[-- Everything Card Incremental — client entry point.
@@ -2390,7 +2480,7 @@ end)
 ]]></string>
           </Properties>
         </Item>
-        <Item class="ModuleScript" referent="18">
+        <Item class="ModuleScript" referent="20">
           <Properties>
             <string name="Name">UI</string>
             <string name="Source"><![CDATA[-- HUD (coins / roll button / auto toggle), the collection panel, per-player
@@ -2567,7 +2657,10 @@ function UI:Build()
 	})
 	addCorner(self.CooldownFill, UDim.new(0, 18))
 
+	local rollScale = create("UIScale", { Parent = rollButton })
 	rollButton.Activated:Connect(function()
+		rollScale.Scale = 0.92
+		TweenService:Create(rollScale, TweenInfo.new(0.2, Enum.EasingStyle.Back, Enum.EasingDirection.Out), { Scale = 1 }):Play()
 		self.ClickSound:Play()
 		self.Callbacks.OnRoll()
 	end)
@@ -2815,6 +2908,29 @@ function UI:RebuildCollection()
 		return a.Card.Boost > b.Card.Boost
 	end)
 
+	if #sorted == 0 then
+		local hint = create("Frame", {
+			Size = UDim2.new(1, -8, 0, 56),
+			BackgroundColor3 = COLORS.Panel,
+			Parent = self.CollectionScroll,
+		})
+		addCorner(hint, UDim.new(0, 10))
+		create("TextLabel", {
+			BackgroundTransparency = 1,
+			Size = UDim2.new(1, -16, 1, 0),
+			Position = UDim2.new(0, 8, 0, 0),
+			Font = Enum.Font.GothamBold,
+			TextSize = 14,
+			TextWrapped = true,
+			TextColor3 = COLORS.TextDim,
+			Text = "No cards yet — press ROLL to pull your first one!",
+			Parent = hint,
+		})
+		return
+	end
+
+	local slotsFull = #self.State.Equipped >= self.State.Stats.EquipSlots
+
 	for order, entry in sorted do
 		local key, card = entry.Key, entry.Card
 		local tier = Config.TierByName[card.Tier] or Config.Tiers[1]
@@ -2868,7 +2984,10 @@ function UI:RebuildCollection()
 			AnchorPoint = Vector2.new(1, 0.5),
 			Position = UDim2.new(1, -8, 0.5, 0),
 			Size = UDim2.fromOffset(72, 34),
-			BackgroundColor3 = if isEquipped then COLORS.Red else COLORS.Green,
+			BackgroundColor3 = if isEquipped
+				then COLORS.Red
+				elseif slotsFull then COLORS.Disabled
+				else COLORS.Green,
 			Font = Enum.Font.GothamBold,
 			TextSize = 13,
 			TextColor3 = COLORS.Text,
@@ -3046,6 +3165,13 @@ function UI:UpdatePads()
 			continue
 		end
 
+		-- pads you own glow warm gold (local-only color change)
+		if entry.Trim then
+			entry.Trim.Color = if level >= 1
+				then Color3.fromRGB(255, 240, 160)
+				else (Config.BranchColors[treeNode.Branch] or Color3.fromRGB(200, 200, 200))
+		end
+
 		if treeNode.MaxLevel and level >= treeNode.MaxLevel then
 			entry.CostLabel.Text = "✓ OWNED"
 			entry.CostLabel.TextColor3 = Color3.fromRGB(10, 60, 25)
@@ -3092,6 +3218,11 @@ function UI:Update(state)
 	if state.Cards then
 		self.Cards = state.Cards
 		self:ScheduleCollectionRebuild()
+	end
+
+	if not self.WelcomedOnce and state.TotalRolls == 0 then
+		self.WelcomedOnce = true
+		self:ShowTicker("👇 Press ROLL to pull your first card!")
 	end
 
 	if previous then
@@ -3158,12 +3289,12 @@ return UI
       </Item>
     </Item>
   </Item>
-  <Item class="Workspace" referent="19">
+  <Item class="Workspace" referent="21">
     <Properties>
       <string name="Name">Workspace</string>
       <bool name="NeedsPivotMigration">false</bool>
     </Properties>
-    <Item class="Part" referent="20">
+    <Item class="Part" referent="22">
       <Properties>
         <string name="Name">Baseplate</string>
         <bool name="Anchored">true</bool>
@@ -3184,7 +3315,7 @@ return UI
         <token name="TopSurface">0</token>
       </Properties>
     </Item>
-    <Item class="SpawnLocation" referent="21">
+    <Item class="SpawnLocation" referent="23">
       <Properties>
         <string name="Name">SpawnLocation</string>
         <bool name="Anchored">true</bool>

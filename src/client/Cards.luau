@@ -268,8 +268,17 @@ function Cards:ShowSplash(rollCards, holdSeconds)
 	end
 
 	local width = if #rollCards <= 1 then 210 elseif #rollCards <= 3 then 180 else 150
-	for _, card in rollCards do
-		self:BuildCardFrame(card, width, self.CardRow)
+	for index, card in rollCards do
+		local frame = self:BuildCardFrame(card, width, self.CardRow)
+		-- pop-in: each card springs up in sequence
+		local scale = Instance.new("UIScale")
+		scale.Scale = 0.2
+		scale.Parent = frame
+		TweenService:Create(
+			scale,
+			TweenInfo.new(0.35, Enum.EasingStyle.Back, Enum.EasingDirection.Out, 0, false, (index - 1) * 0.08),
+			{ Scale = 1 }
+		):Play()
 	end
 
 	self.Overlay.Visible = true
@@ -312,6 +321,10 @@ function Cards:ShowToast(card)
 		Parent = self.ToastColumn,
 	})
 	create("UICorner", { CornerRadius = UDim.new(0, 8), Parent = toast })
+	-- slide in from invisible
+	toast.TextTransparency = 1
+	toast.BackgroundTransparency = 1
+	TweenService:Create(toast, TweenInfo.new(0.15), { TextTransparency = 0, BackgroundTransparency = 0.15 }):Play()
 	task.delay(1.6, function()
 		local tween = TweenService:Create(toast, TweenInfo.new(0.4), { TextTransparency = 1, BackgroundTransparency = 1 })
 		tween.Completed:Once(function()
@@ -319,6 +332,32 @@ function Cards:ShowToast(card)
 		end)
 		tween:Play()
 	end)
+end
+
+-- quick colored flash across the whole screen for big pulls
+function Cards:FlashScreen(color)
+	local flash = create("Frame", {
+		BackgroundColor3 = color,
+		BackgroundTransparency = 0.55,
+		Size = UDim2.new(1, 0, 1, 0),
+		ZIndex = 9,
+		Parent = self.ScreenGui,
+	})
+	local tween = TweenService:Create(flash, TweenInfo.new(0.5), { BackgroundTransparency = 1 })
+	tween.Completed:Once(function()
+		flash:Destroy()
+	end)
+	tween:Play()
+end
+
+-- three rising pings instead of one — the "you just hit something" sound
+function Cards:PlayFanfare(bestIndex)
+	for i = 1, 3 do
+		task.delay((i - 1) * 0.09, function()
+			self.RevealSound.PlaybackSpeed = 0.8 + bestIndex * 0.08 + i * 0.18
+			self.RevealSound:Play()
+		end)
+	end
 end
 
 -- entry point for every roll result from the server
@@ -332,11 +371,16 @@ function Cards:ShowRollResult(payload)
 		end
 	end
 
-	local rareIndex = Config.TierByName.Rare.Index
-	local isExciting = bestIndex >= rareIndex
+	local isExciting = bestIndex >= Config.TierByName.Rare.Index
+	local isHuge = bestIndex >= Config.TierByName.Legendary.Index
 
-	self.RevealSound.PlaybackSpeed = 0.9 + bestIndex * 0.12
-	self.RevealSound:Play()
+	if isHuge then
+		self:PlayFanfare(bestIndex)
+		self:FlashScreen(Config.Tiers[bestIndex].Color)
+	else
+		self.RevealSound.PlaybackSpeed = 0.9 + bestIndex * 0.12
+		self.RevealSound:Play()
+	end
 
 	-- auto-roll spam of commons becomes toasts; anything exciting gets the splash
 	if payload.Auto and not isExciting then
