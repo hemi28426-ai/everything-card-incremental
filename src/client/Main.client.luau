@@ -14,6 +14,8 @@ local equipRemote = remotes:WaitForChild("Equip")
 local unequipRemote = remotes:WaitForChild("Unequip")
 local equipBestRemote = remotes:WaitForChild("EquipBest")
 local sellDupesRemote = remotes:WaitForChild("SellDupes")
+local sellCardRemote = remotes:WaitForChild("SellCard")
+local setAutoSellRemote = remotes:WaitForChild("SetAutoSell")
 local toggleAutoRemote = remotes:WaitForChild("ToggleAuto")
 local backpackRemote = remotes:WaitForChild("UpgradeBackpack")
 local stateRemote = remotes:WaitForChild("StateChanged")
@@ -49,6 +51,12 @@ ui = UI.new({
 	end,
 	OnSellDupes = function(target)
 		sellDupesRemote:FireServer(target)
+	end,
+	OnSellCard = function(key)
+		sellCardRemote:FireServer(key)
+	end,
+	OnSetAutoSell = function(tierName, enabled)
+		setAutoSellRemote:FireServer(tierName, enabled)
 	end,
 	OnToggleAuto = function()
 		toggleAutoRemote:FireServer()

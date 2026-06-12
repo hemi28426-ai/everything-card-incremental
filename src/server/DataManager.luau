@@ -34,6 +34,7 @@ local DEFAULT_DATA = {
 	Upgrades = {}, -- nodeId -> level
 	Cards = {}, -- userId (as string) -> {Name, DisplayName, Tier, Boost, Traits, Flavor?, Count}
 	Equipped = {}, -- array of userId strings
+	AutoSell = {}, -- tierName -> true (auto-sell pulls of this tier)
 	AutoOn = true,
 	LastSeen = 0,
 }

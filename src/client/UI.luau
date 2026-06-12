@@ -196,8 +196,88 @@ function UI:Build()
 	end)
 
 	self:BuildCollection()
+	self:BuildSettings()
 	task.spawn(function()
 		self:BuildPadSurfaces()
+	end)
+end
+
+-- ===== settings (auto-sell) ================================================
+
+function UI:BuildSettings()
+	local toggle = create("TextButton", {
+		AnchorPoint = Vector2.new(1, 0),
+		Position = UDim2.new(1, -12, 0, 10),
+		Size = UDim2.fromOffset(48, 48),
+		BackgroundColor3 = COLORS.PanelLight,
+		Font = Enum.Font.GothamBold,
+		TextSize = 22,
+		TextColor3 = COLORS.Text,
+		Text = "⚙️",
+		Parent = self.ScreenGui,
+	})
+	addCorner(toggle, UDim.new(0, 14))
+
+	local panel = create("Frame", {
+		AnchorPoint = Vector2.new(1, 0),
+		Position = UDim2.new(1, -12, 0, 66),
+		Size = UDim2.fromOffset(250, 168),
+		BackgroundColor3 = COLORS.Panel,
+		BackgroundTransparency = 0.05,
+		Visible = false,
+		Parent = self.ScreenGui,
+	})
+	addCorner(panel, UDim.new(0, 16))
+	create("UIStroke", { Color = COLORS.PanelLight, Thickness = 2, Parent = panel })
+
+	create("TextLabel", {
+		BackgroundTransparency = 1,
+		Position = UDim2.new(0, 14, 0, 8),
+		Size = UDim2.new(1, -28, 0, 24),
+		Font = Enum.Font.GothamBlack,
+		TextSize = 16,
+		TextColor3 = COLORS.Text,
+		TextXAlignment = Enum.TextXAlignment.Left,
+		Text = "SETTINGS",
+		Parent = panel,
+	})
+
+	self.AutoSellButtons = {}
+	for index, tierName in { "Common", "Uncommon", "Rare" } do
+		local tier = Config.TierByName[tierName]
+		local y = 12 + index * 38
+		create("TextLabel", {
+			BackgroundTransparency = 1,
+			Position = UDim2.new(0, 14, 0, y),
+			Size = UDim2.new(1, -100, 0, 30),
+			Font = Enum.Font.GothamBold,
+			TextSize = 13,
+			TextColor3 = tier.Color,
+			TextXAlignment = Enum.TextXAlignment.Left,
+			Text = "Auto-sell " .. tierName,
+			Parent = panel,
+		})
+		local button = create("TextButton", {
+			AnchorPoint = Vector2.new(1, 0),
+			Position = UDim2.new(1, -14, 0, y),
+			Size = UDim2.fromOffset(64, 30),
+			BackgroundColor3 = COLORS.Disabled,
+			Font = Enum.Font.GothamBold,
+			TextSize = 13,
+			TextColor3 = COLORS.Text,
+			Text = "OFF",
+			Parent = panel,
+		})
+		addCorner(button, UDim.new(0, 8))
+		button.Activated:Connect(function()
+			local current = self.State and self.State.AutoSell[tierName] == true
+			self.Callbacks.OnSetAutoSell(tierName, not current)
+		end)
+		self.AutoSellButtons[tierName] = button
+	end
+
+	toggle.Activated:Connect(function()
+		panel.Visible = not panel.Visible
 	end)
 end
 
@@ -409,24 +489,38 @@ function UI:RebuildCollection()
 			end
 		end)
 
-		if card.Count > 1 then
-			local sellButton = create("TextButton", {
-				AnchorPoint = Vector2.new(1, 0.5),
-				Position = UDim2.new(1, -86, 0.5, 0),
-				Size = UDim2.fromOffset(56, 34),
-				BackgroundColor3 = COLORS.Gold,
-				Font = Enum.Font.GothamBold,
-				TextSize = 12,
-				TextColor3 = Color3.fromRGB(60, 40, 0),
-				Text = "Sell",
-				Parent = row,
-			})
-			addCorner(sellButton, UDim.new(0, 8))
-			sellButton.Activated:Connect(function()
-				self.BuySound:Play()
-				self.Callbacks.OnSellDupes(key)
-			end)
-		end
+		-- sells the WHOLE card (all copies); big tiers ask for a second click
+		local sellButton = create("TextButton", {
+			AnchorPoint = Vector2.new(1, 0.5),
+			Position = UDim2.new(1, -86, 0.5, 0),
+			Size = UDim2.fromOffset(56, 34),
+			BackgroundColor3 = COLORS.Gold,
+			Font = Enum.Font.GothamBold,
+			TextSize = 12,
+			TextColor3 = Color3.fromRGB(60, 40, 0),
+			Text = card.Count > 1 and ("Sell x" .. card.Count) or "Sell",
+			Parent = row,
+		})
+		addCorner(sellButton, UDim.new(0, 8))
+		local needsConfirm = tier.Index >= Config.TierByName.Legendary.Index
+		local armed = false
+		sellButton.Activated:Connect(function()
+			if needsConfirm and not armed then
+				armed = true
+				sellButton.Text = "Sure?"
+				sellButton.BackgroundColor3 = COLORS.Red
+				task.delay(3, function()
+					if armed and sellButton.Parent then
+						armed = false
+						sellButton.Text = card.Count > 1 and ("Sell x" .. card.Count) or "Sell"
+						sellButton.BackgroundColor3 = COLORS.Gold
+					end
+				end)
+				return
+			end
+			self.BuySound:Play()
+			self.Callbacks.OnSellCard(key)
+		end)
 	end
 end
 
@@ -648,6 +742,12 @@ function UI:Update(state)
 	self.BackpackButton.BackgroundColor3 = if state.RollsBalance >= state.BackpackCost
 		then COLORS.Purple
 		else COLORS.Disabled
+
+	for tierName, button in self.AutoSellButtons do
+		local enabled = state.AutoSell[tierName] == true
+		button.Text = enabled and "ON" or "OFF"
+		button.BackgroundColor3 = if enabled then COLORS.Green else COLORS.Disabled
+	end
 
 	-- remotes deep-copy tables, so compare equipped by content, not identity
 	if previous and table.concat(state.Equipped, ",") ~= table.concat(previous.Equipped, ",") then

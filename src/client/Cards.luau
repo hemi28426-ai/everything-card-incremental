@@ -216,7 +216,7 @@ function Cards:BuildCardFrame(card, width, parent)
 			Font = Enum.Font.GothamBlack,
 			TextSize = 11,
 			TextColor3 = Color3.fromRGB(60, 25, 0),
-			Text = "BAG FULL — SOLD",
+			Text = if card.Reason == "full" then "BAG FULL — SOLD" else "AUTO-SOLD",
 			Rotation = -8,
 			ZIndex = 13,
 			Parent = frame,
@@ -297,7 +297,8 @@ function Cards:ShowToast(card)
 	local tier = Config.TierByName[card.Tier] or Config.Tiers[1]
 	local text = ("+ %s  %s"):format(card.Tier, card.DisplayName or card.Name)
 	if card.AutoSold then
-		text = ("💰 full bag — sold %s (+%s)"):format(card.DisplayName or card.Name, Format(card.SoldFor or 0))
+		local why = if card.Reason == "full" then "full bag" else "auto-sell"
+		text = ("💰 %s — sold %s (+%s)"):format(why, card.DisplayName or card.Name, Format(card.SoldFor or 0))
 	end
 	local toast = create("TextLabel", {
 		BackgroundColor3 = PANEL_COLOR,

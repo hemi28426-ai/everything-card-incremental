@@ -32,6 +32,8 @@ local equipRemote = makeRemote("Equip")
 local unequipRemote = makeRemote("Unequip")
 local equipBestRemote = makeRemote("EquipBest")
 local sellDupesRemote = makeRemote("SellDupes")
+local sellCardRemote = makeRemote("SellCard")
+local setAutoSellRemote = makeRemote("SetAutoSell")
 local toggleAutoRemote = makeRemote("ToggleAuto")
 local backpackRemote = makeRemote("UpgradeBackpack")
 local stateRemote = makeRemote("StateChanged")
@@ -75,6 +77,7 @@ local function buildState(session, includeCards)
 		BackpackCapacity = Config.GetBackpackCapacity(data.BackpackLevel),
 		BackpackCost = Config.GetBackpackCost(data.BackpackLevel),
 		CardCount = countUnique(data.Cards),
+		AutoSell = data.AutoSell,
 		BestTier = data.BestTier,
 		Upgrades = data.Upgrades,
 		Equipped = data.Equipped,
@@ -107,9 +110,17 @@ end
 
 -- ===== rolling =============================================================
 
--- Adds a rolled card to the collection. Dupes stack for free; a NEW unique
--- card when the backpack is full gets auto-sold for coins instead.
+-- Adds a rolled card to the collection. Auto-sell settings convert the pull
+-- straight to coins; dupes stack for free; a NEW unique card when the
+-- backpack is full gets auto-sold too.
 local function addCardToCollection(data, stats, card)
+	local tier = Config.TierByName[card.Tier]
+	if data.AutoSell[card.Tier] then
+		local soldFor = math.floor(tier.SellValue * stats.DupeMult)
+		data.Coins += soldFor
+		data.TotalEarned += soldFor
+		return { IsNew = false, Count = 0, AutoSold = true, SoldFor = soldFor, Reason = "setting" }
+	end
 	local key = tostring(card.UserId)
 	local owned = data.Cards[key]
 	if owned then
@@ -117,11 +128,10 @@ local function addCardToCollection(data, stats, card)
 		return { IsNew = false, Count = owned.Count }
 	end
 	if countUnique(data.Cards) >= Config.GetBackpackCapacity(data.BackpackLevel) then
-		local tier = Config.TierByName[card.Tier]
 		local soldFor = math.floor(tier.SellValue * stats.DupeMult)
 		data.Coins += soldFor
 		data.TotalEarned += soldFor
-		return { IsNew = false, Count = 0, AutoSold = true, SoldFor = soldFor }
+		return { IsNew = false, Count = 0, AutoSold = true, SoldFor = soldFor, Reason = "full" }
 	end
 	data.Cards[key] = {
 		UserId = card.UserId,
@@ -189,6 +199,7 @@ local function performRoll(player, isAuto)
 			Count = outcome.Count,
 			AutoSold = outcome.AutoSold,
 			SoldFor = outcome.SoldFor,
+			Reason = outcome.Reason,
 		})
 	end
 
@@ -403,6 +414,40 @@ sellDupesRemote.OnServerEvent:Connect(function(player, target)
 		data.TotalEarned += earned
 		pushState(player, true)
 	end
+end)
+
+-- sell a whole card (all copies), unequipping it if needed
+sellCardRemote.OnServerEvent:Connect(function(player, key)
+	local session = sessions[player]
+	if not session or type(key) ~= "string" then
+		return
+	end
+	local data = session.Data
+	local card = data.Cards[key]
+	if not card then
+		return
+	end
+	local tier = Config.TierByName[card.Tier]
+	local earned = math.floor(tier.SellValue * card.Count * session.Stats.DupeMult)
+	data.Cards[key] = nil
+	local equippedIndex = table.find(data.Equipped, key)
+	if equippedIndex then
+		table.remove(data.Equipped, equippedIndex)
+	end
+	data.Coins += earned
+	data.TotalEarned += earned
+	pushState(player, true)
+end)
+
+local AUTO_SELL_ALLOWED = { Common = true, Uncommon = true, Rare = true }
+
+setAutoSellRemote.OnServerEvent:Connect(function(player, tierName, enabled)
+	local session = sessions[player]
+	if not session or type(tierName) ~= "string" or not AUTO_SELL_ALLOWED[tierName] then
+		return
+	end
+	session.Data.AutoSell[tierName] = if enabled == true then true else nil
+	pushState(player, false)
 end)
 
 toggleAutoRemote.OnServerEvent:Connect(function(player)
