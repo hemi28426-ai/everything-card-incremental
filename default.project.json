@@ -1,0 +1,61 @@
+{
+  "name": "ClickEmpire",
+  "tree": {
+    "$className": "DataModel",
+
+    "ReplicatedStorage": {
+      "Shared": {
+        "$path": "src/shared"
+      }
+    },
+
+    "ServerScriptService": {
+      "Server": {
+        "$path": "src/server"
+      }
+    },
+
+    "StarterPlayer": {
+      "StarterPlayerScripts": {
+        "Client": {
+          "$path": "src/client"
+        }
+      }
+    },
+
+    "Workspace": {
+      "Baseplate": {
+        "$className": "Part",
+        "$properties": {
+          "Anchored": true,
+          "Locked": true,
+          "Size": [512, 16, 512],
+          "Position": [0, -8, 0],
+          "Color": [0.22, 0.23, 0.28],
+          "Material": "Slate",
+          "TopSurface": "Smooth",
+          "BottomSurface": "Smooth"
+        }
+      },
+      "SpawnLocation": {
+        "$className": "SpawnLocation",
+        "$properties": {
+          "Anchored": true,
+          "Size": [12, 1, 12],
+          "Position": [0, 0.5, 0],
+          "Duration": 0,
+          "Color": [1, 0.78, 0.25],
+          "Material": "SmoothPlastic",
+          "TopSurface": "Smooth"
+        }
+      }
+    },
+
+    "Lighting": {
+      "$properties": {
+        "Brightness": 3,
+        "ClockTime": 14.5
+      }
+    }
+  }
+}

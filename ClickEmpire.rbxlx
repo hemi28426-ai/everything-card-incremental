@@ -1,0 +1,1214 @@
+<roblox version="4">
+  <Item class="Lighting" referent="0">
+    <Properties>
+      <string name="Name">Lighting</string>
+      <float name="Brightness">3</float>
+      <float name="ClockTime">14.5</float>
+    </Properties>
+  </Item>
+  <Item class="ReplicatedStorage" referent="1">
+    <Properties>
+      <string name="Name">ReplicatedStorage</string>
+    </Properties>
+    <Item class="Folder" referent="2">
+      <Properties>
+        <string name="Name">Shared</string>
+      </Properties>
+      <Item class="ModuleScript" referent="3">
+        <Properties>
+          <string name="Name">Config</string>
+          <string name="Source"><![CDATA[-- All game tuning lives in this one file.
+-- Change numbers, rename things, or add new upgrades to the list below —
+-- the shop UI and the server logic both build themselves from this table.
+
+local Config = {}
+
+Config.GameName = "Click Empire"
+
+-- The server ignores clicks beyond this rate (basic anti-autoclicker).
+Config.MaxClicksPerSecond = 15
+
+Config.AutosaveInterval = 60 -- seconds between automatic saves
+Config.LeaderboardRefreshInterval = 60 -- seconds between leaderboard updates
+Config.LeaderboardSize = 10
+
+-- Upgrade types:
+--   "click" = adds Power to the cash you earn per click
+--   "auto"  = adds Power to the cash you earn automatically every second
+-- Cost to buy the (n+1)th copy = BaseCost * CostMult ^ n
+Config.Upgrades = {
+	{ Id = "finger", Name = "Stronger Finger", Desc = "+1 per click", Type = "click", Power = 1, BaseCost = 15, CostMult = 1.15 },
+	{ Id = "auto1", Name = "Auto Clicker", Desc = "+1 per second", Type = "auto", Power = 1, BaseCost = 60, CostMult = 1.15 },
+	{ Id = "glove", Name = "Golden Glove", Desc = "+5 per click", Type = "click", Power = 5, BaseCost = 150, CostMult = 1.15 },
+	{ Id = "auto2", Name = "Click Robot", Desc = "+8 per second", Type = "auto", Power = 8, BaseCost = 700, CostMult = 1.15 },
+	{ Id = "fist", Name = "Diamond Fist", Desc = "+30 per click", Type = "click", Power = 30, BaseCost = 2000, CostMult = 1.15 },
+	{ Id = "auto3", Name = "Click Factory", Desc = "+50 per second", Type = "auto", Power = 50, BaseCost = 9000, CostMult = 1.15 },
+	{ Id = "mitt", Name = "Mega Mitt", Desc = "+200 per click", Type = "click", Power = 200, BaseCost = 25000, CostMult = 1.15 },
+	{ Id = "auto4", Name = "Click Lab", Desc = "+300 per second", Type = "auto", Power = 300, BaseCost = 100000, CostMult = 1.15 },
+	{ Id = "auto5", Name = "Quantum Clicker", Desc = "+2000 per second", Type = "auto", Power = 2000, BaseCost = 1200000, CostMult = 1.15 },
+}
+
+-- Rebirth: reset cash + upgrades for a permanent earnings multiplier.
+-- Cost of the (n+1)th rebirth = BaseCost * CostMult ^ n
+-- Earnings multiplier = 1 + MultiplierPerRebirth * rebirths
+Config.Rebirth = {
+	BaseCost = 100000,
+	CostMult = 6,
+	MultiplierPerRebirth = 1,
+}
+
+-- Fast lookup by id (used by the server to validate purchases).
+Config.UpgradeById = {}
+for _, upgrade in Config.Upgrades do
+	Config.UpgradeById[upgrade.Id] = upgrade
+end
+
+function Config.GetUpgradeCost(upgrade, owned)
+	return math.floor(upgrade.BaseCost * upgrade.CostMult ^ owned)
+end
+
+function Config.GetRebirthCost(rebirths)
+	return math.floor(Config.Rebirth.BaseCost * Config.Rebirth.CostMult ^ rebirths)
+end
+
+function Config.GetMultiplier(rebirths)
+	return 1 + Config.Rebirth.MultiplierPerRebirth * rebirths
+end
+
+function Config.GetClickPower(upgrades, rebirths)
+	local power = 1
+	for _, upgrade in Config.Upgrades do
+		if upgrade.Type == "click" then
+			power += (upgrades[upgrade.Id] or 0) * upgrade.Power
+		end
+	end
+	return power * Config.GetMultiplier(rebirths)
+end
+
+function Config.GetAutoPower(upgrades, rebirths)
+	local power = 0
+	for _, upgrade in Config.Upgrades do
+		if upgrade.Type == "auto" then
+			power += (upgrades[upgrade.Id] or 0) * upgrade.Power
+		end
+	end
+	return power * Config.GetMultiplier(rebirths)
+end
+
+return Config
+]]></string>
+        </Properties>
+      </Item>
+      <Item class="ModuleScript" referent="4">
+        <Properties>
+          <string name="Name">Format</string>
+          <string name="Source"><![CDATA[-- Formats big numbers the way incremental games do: 1532 -> "1.53K", 2.4e9 -> "2.4B"
+
+local SUFFIXES = { "", "K", "M", "B", "T", "Qa", "Qi", "Sx", "Sp", "Oc", "No", "Dc" }
+
+local function format(n: number): string
+	n = math.floor(n + 0.5)
+	if n < 0 then
+		return "-" .. format(-n)
+	end
+	if n < 1000 then
+		return tostring(n)
+	end
+
+	local index = math.min(math.floor(math.log10(n) / 3), #SUFFIXES - 1)
+	local scaled = n / 10 ^ (index * 3)
+
+	local text
+	if scaled >= 100 then
+		text = string.format("%.0f", scaled)
+	elseif scaled >= 10 then
+		text = string.format("%.1f", scaled)
+	else
+		text = string.format("%.2f", scaled)
+	end
+
+	-- trim trailing zeros: "1.50" -> "1.5", "2.00" -> "2"
+	text = text:gsub("%.0+$", ""):gsub("(%.%d-)0+$", "%1")
+
+	return text .. SUFFIXES[index + 1]
+end
+
+return format
+]]></string>
+        </Properties>
+      </Item>
+    </Item>
+  </Item>
+  <Item class="ServerScriptService" referent="5">
+    <Properties>
+      <string name="Name">ServerScriptService</string>
+    </Properties>
+    <Item class="Folder" referent="6">
+      <Properties>
+        <string name="Name">Server</string>
+      </Properties>
+      <Item class="ModuleScript" referent="7">
+        <Properties>
+          <string name="Name">DataManager</string>
+          <string name="Source"><![CDATA[-- Loads and saves player progress with DataStores.
+-- NOTE: DataStores only work once the game is published and
+-- "Enable Studio Access to API Services" is turned on in Game Settings > Security.
+-- Until then the game still runs — progress just doesn't persist.
+
+local DataStoreService = game:GetService("DataStoreService")
+
+local DataManager = {}
+
+local STORE_NAME = "PlayerData_v1"
+local KEY_PREFIX = "player_"
+local RETRIES = 3
+
+local store = nil
+do
+	local ok, result = pcall(function()
+		return DataStoreService:GetDataStore(STORE_NAME)
+	end)
+	if ok then
+		store = result
+	else
+		warn("[ClickEmpire] DataStores unavailable — progress will NOT save. " ..
+			"(Normal in Studio until the game is published with API access enabled.) " .. tostring(result))
+	end
+end
+
+local DEFAULT_DATA = {
+	Cash = 0,
+	TotalEarned = 0,
+	TotalClicks = 0,
+	Rebirths = 0,
+	Upgrades = {}, -- map of upgrade id -> amount owned
+}
+
+function DataManager.NewDefault()
+	local data = table.clone(DEFAULT_DATA)
+	data.Upgrades = {}
+	return data
+end
+
+-- Returns (data, loadedSafely). When loadedSafely is false we refuse to save
+-- later, so a temporary outage can never wipe a player's real progress.
+function DataManager.Load(player)
+	if not store then
+		return DataManager.NewDefault(), false
+	end
+
+	local key = KEY_PREFIX .. player.UserId
+	for attempt = 1, RETRIES do
+		local ok, result = pcall(function()
+			return store:GetAsync(key)
+		end)
+		if ok then
+			if type(result) == "table" then
+				-- fill in any fields added to the game since this player last played
+				for field, defaultValue in DEFAULT_DATA do
+					if result[field] == nil then
+						result[field] = if type(defaultValue) == "table" then {} else defaultValue
+					end
+				end
+				return result, true
+			end
+			return DataManager.NewDefault(), true -- brand new player
+		end
+		if attempt < RETRIES then
+			task.wait(attempt)
+		end
+	end
+
+	warn(("[ClickEmpire] Failed to load data for %s — playing without saving this session"):format(player.Name))
+	return DataManager.NewDefault(), false
+end
+
+function DataManager.Save(player, data)
+	if not store then
+		return false
+	end
+
+	local key = KEY_PREFIX .. player.UserId
+	for attempt = 1, RETRIES do
+		local ok = pcall(function()
+			store:UpdateAsync(key, function()
+				return data
+			end)
+		end)
+		if ok then
+			return true
+		end
+		if attempt < RETRIES then
+			task.wait(attempt)
+		end
+	end
+
+	warn(("[ClickEmpire] Failed to save data for %s"):format(player.Name))
+	return false
+end
+
+return DataManager
+]]></string>
+        </Properties>
+      </Item>
+      <Item class="ModuleScript" referent="8">
+        <Properties>
+          <string name="Name">Leaderboard</string>
+          <string name="Source"><![CDATA[-- Global top-10 leaderboard: a physical board near spawn showing the
+-- players who have earned the most cash of all time (OrderedDataStore).
+
+local DataStoreService = game:GetService("DataStoreService")
+local Players = game:GetService("Players")
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
+
+local Shared = ReplicatedStorage:WaitForChild("Shared")
+local Config = require(Shared:WaitForChild("Config"))
+local Format = require(Shared:WaitForChild("Format"))
+
+local Leaderboard = {}
+
+local orderedStore = nil
+pcall(function()
+	orderedStore = DataStoreService:GetOrderedDataStore("TotalEarned_v1")
+end)
+
+local nameCache = {}
+local rowLabels = {}
+
+function Leaderboard.Submit(userId, totalEarned)
+	if not orderedStore then
+		return
+	end
+	local amount = math.floor(totalEarned)
+	if amount <= 0 then
+		return
+	end
+	task.spawn(function()
+		pcall(function()
+			orderedStore:SetAsync(tostring(userId), amount)
+		end)
+	end)
+end
+
+local function getName(userId)
+	if nameCache[userId] then
+		return nameCache[userId]
+	end
+	local name = "Player " .. userId
+	local ok, result = pcall(function()
+		return Players:GetNameFromUserIdAsync(userId)
+	end)
+	if ok then
+		name = result
+	end
+	nameCache[userId] = name
+	return name
+end
+
+local function createBoard()
+	local board = Instance.new("Part")
+	board.Name = "GlobalLeaderboard"
+	board.Anchored = true
+	board.Size = Vector3.new(16, 9, 1)
+	board.Position = Vector3.new(0, 7.5, -30)
+	board.Color = Color3.fromRGB(28, 30, 40)
+	board.Material = Enum.Material.SmoothPlastic
+
+	local gui = Instance.new("SurfaceGui")
+	gui.Face = Enum.NormalId.Back -- this side faces the spawn point
+	gui.SizingMode = Enum.SurfaceGuiSizingMode.PixelsPerStud
+	gui.PixelsPerStud = 40
+	gui.Parent = board
+
+	local title = Instance.new("TextLabel")
+	title.BackgroundTransparency = 1
+	title.Size = UDim2.new(1, 0, 0, 56)
+	title.Font = Enum.Font.GothamBlack
+	title.TextSize = 36
+	title.TextColor3 = Color3.fromRGB(255, 196, 60)
+	title.Text = "🏆 TOP EARNERS"
+	title.Parent = gui
+
+	local list = Instance.new("Frame")
+	list.BackgroundTransparency = 1
+	list.Position = UDim2.new(0, 24, 0, 60)
+	list.Size = UDim2.new(1, -48, 1, -70)
+	list.Parent = gui
+
+	local layout = Instance.new("UIListLayout")
+	layout.SortOrder = Enum.SortOrder.LayoutOrder
+	layout.Padding = UDim.new(0, 2)
+	layout.Parent = list
+
+	for i = 1, Config.LeaderboardSize do
+		local row = Instance.new("TextLabel")
+		row.BackgroundTransparency = 1
+		row.Size = UDim2.new(1, 0, 0, 26)
+		row.Font = Enum.Font.GothamBold
+		row.TextSize = 20
+		row.TextXAlignment = Enum.TextXAlignment.Left
+		row.TextColor3 = Color3.fromRGB(230, 232, 240)
+		row.LayoutOrder = i
+		row.Text = ""
+		row.Parent = list
+		rowLabels[i] = row
+	end
+
+	board.Parent = workspace
+end
+
+function Leaderboard.Start()
+	createBoard()
+
+	if not orderedStore then
+		rowLabels[1].Text = "Leaderboard needs a published game with API access"
+		return
+	end
+
+	task.spawn(function()
+		while true do
+			local ok, pages = pcall(function()
+				return orderedStore:GetSortedAsync(false, Config.LeaderboardSize)
+			end)
+			if ok then
+				local page = pages:GetCurrentPage()
+				for i = 1, Config.LeaderboardSize do
+					local entry = page[i]
+					if entry then
+						local userId = tonumber(entry.key) or 0
+						rowLabels[i].Text = ("%d.  %s  —  $%s"):format(i, getName(userId), Format(entry.value))
+					else
+						rowLabels[i].Text = ""
+					end
+				end
+			end
+			task.wait(Config.LeaderboardRefreshInterval)
+		end
+	end)
+end
+
+return Leaderboard
+]]></string>
+        </Properties>
+      </Item>
+      <Item class="Script" referent="9">
+        <Properties>
+          <string name="Name">Main</string>
+          <token name="RunContext">0</token>
+          <string name="Source"><![CDATA[-- Click Empire — server entry point.
+-- Owns all the real game state. The client only *asks* to click/buy/rebirth;
+-- everything is validated here so exploiters can't give themselves cash.
+
+local Players = game:GetService("Players")
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
+
+local Shared = ReplicatedStorage:WaitForChild("Shared")
+local Config = require(Shared:WaitForChild("Config"))
+local Format = require(Shared:WaitForChild("Format"))
+
+local DataManager = require(script.Parent:WaitForChild("DataManager"))
+local Leaderboard = require(script.Parent:WaitForChild("Leaderboard"))
+
+-- Remotes the client talks to us through
+local remotes = Instance.new("Folder")
+remotes.Name = "Remotes"
+
+local clickRemote = Instance.new("RemoteEvent")
+clickRemote.Name = "Click"
+clickRemote.Parent = remotes
+
+local buyRemote = Instance.new("RemoteEvent")
+buyRemote.Name = "BuyUpgrade"
+buyRemote.Parent = remotes
+
+local rebirthRemote = Instance.new("RemoteEvent")
+rebirthRemote.Name = "Rebirth"
+rebirthRemote.Parent = remotes
+
+local stateRemote = Instance.new("RemoteEvent")
+stateRemote.Name = "StateChanged"
+stateRemote.Parent = remotes
+
+remotes.Parent = ReplicatedStorage
+
+-- One session entry per connected player
+local sessions = {}
+
+local function buildState(data)
+	return {
+		Cash = data.Cash,
+		TotalEarned = data.TotalEarned,
+		TotalClicks = data.TotalClicks,
+		Rebirths = data.Rebirths,
+		Upgrades = data.Upgrades,
+		ClickPower = Config.GetClickPower(data.Upgrades, data.Rebirths),
+		AutoPower = Config.GetAutoPower(data.Upgrades, data.Rebirths),
+		Multiplier = Config.GetMultiplier(data.Rebirths),
+		RebirthCost = Config.GetRebirthCost(data.Rebirths),
+		NextMultiplier = Config.GetMultiplier(data.Rebirths + 1),
+	}
+end
+
+local function pushState(player)
+	local session = sessions[player]
+	if not session then
+		return
+	end
+	stateRemote:FireClient(player, buildState(session.Data))
+	session.CashValue.Value = "$" .. Format(session.Data.Cash)
+	session.RebirthsValue.Value = session.Data.Rebirths
+end
+
+local function onPlayerAdded(player)
+	local data, loadedSafely = DataManager.Load(player)
+	if player.Parent ~= Players then
+		return -- they left while their data was loading
+	end
+
+	-- leaderstats = the built-in player list on the right of the screen
+	local leaderstats = Instance.new("Folder")
+	leaderstats.Name = "leaderstats"
+
+	local cashValue = Instance.new("StringValue")
+	cashValue.Name = "Cash"
+	cashValue.Parent = leaderstats
+
+	local rebirthsValue = Instance.new("IntValue")
+	rebirthsValue.Name = "Rebirths"
+	rebirthsValue.Parent = leaderstats
+
+	leaderstats.Parent = player
+
+	sessions[player] = {
+		Data = data,
+		CanSave = loadedSafely,
+		WindowStart = 0,
+		WindowClicks = 0,
+		CashValue = cashValue,
+		RebirthsValue = rebirthsValue,
+	}
+	pushState(player)
+end
+
+Players.PlayerAdded:Connect(onPlayerAdded)
+for _, player in Players:GetPlayers() do
+	task.spawn(onPlayerAdded, player)
+end
+
+local function saveSession(player, session)
+	if not session.CanSave then
+		return
+	end
+	DataManager.Save(player, session.Data)
+	Leaderboard.Submit(player.UserId, session.Data.TotalEarned)
+end
+
+Players.PlayerRemoving:Connect(function(player)
+	local session = sessions[player]
+	sessions[player] = nil
+	if session then
+		saveSession(player, session)
+	end
+end)
+
+game:BindToClose(function()
+	for _, player in Players:GetPlayers() do
+		local session = sessions[player]
+		sessions[player] = nil
+		if session then
+			saveSession(player, session)
+		end
+	end
+end)
+
+-- A click: rate-limited per player, then awarded server-side
+clickRemote.OnServerEvent:Connect(function(player)
+	local session = sessions[player]
+	if not session then
+		return
+	end
+
+	local now = os.clock()
+	if now - session.WindowStart >= 1 then
+		session.WindowStart = now
+		session.WindowClicks = 0
+	end
+	if session.WindowClicks >= Config.MaxClicksPerSecond then
+		return
+	end
+	session.WindowClicks += 1
+
+	local data = session.Data
+	local power = Config.GetClickPower(data.Upgrades, data.Rebirths)
+	data.Cash += power
+	data.TotalEarned += power
+	data.TotalClicks += 1
+	pushState(player)
+end)
+
+buyRemote.OnServerEvent:Connect(function(player, upgradeId)
+	local session = sessions[player]
+	if not session or type(upgradeId) ~= "string" then
+		return
+	end
+	local upgrade = Config.UpgradeById[upgradeId]
+	if not upgrade then
+		return
+	end
+
+	local data = session.Data
+	local owned = data.Upgrades[upgradeId] or 0
+	local cost = Config.GetUpgradeCost(upgrade, owned)
+	if data.Cash < cost then
+		return
+	end
+
+	data.Cash -= cost
+	data.Upgrades[upgradeId] = owned + 1
+	pushState(player)
+end)
+
+rebirthRemote.OnServerEvent:Connect(function(player)
+	local session = sessions[player]
+	if not session then
+		return
+	end
+
+	local data = session.Data
+	if data.Cash < Config.GetRebirthCost(data.Rebirths) then
+		return
+	end
+
+	data.Rebirths += 1
+	data.Cash = 0
+	data.Upgrades = {}
+	pushState(player)
+end)
+
+-- Passive income from "auto" upgrades, once per second
+task.spawn(function()
+	while true do
+		task.wait(1)
+		for player, session in sessions do
+			local data = session.Data
+			local auto = Config.GetAutoPower(data.Upgrades, data.Rebirths)
+			if auto > 0 then
+				data.Cash += auto
+				data.TotalEarned += auto
+			end
+			pushState(player)
+		end
+	end
+end)
+
+-- Autosave so a server crash loses at most a minute of progress
+task.spawn(function()
+	while true do
+		task.wait(Config.AutosaveInterval)
+		for _, player in Players:GetPlayers() do
+			local session = sessions[player]
+			if session then
+				saveSession(player, session)
+			end
+		end
+	end
+end)
+
+Leaderboard.Start()
+
+print(("[%s] server started"):format(Config.GameName))
+]]></string>
+        </Properties>
+      </Item>
+    </Item>
+  </Item>
+  <Item class="StarterPlayer" referent="10">
+    <Properties>
+      <string name="Name">StarterPlayer</string>
+    </Properties>
+    <Item class="StarterPlayerScripts" referent="11">
+      <Properties>
+        <string name="Name">StarterPlayerScripts</string>
+      </Properties>
+      <Item class="Folder" referent="12">
+        <Properties>
+          <string name="Name">Client</string>
+        </Properties>
+        <Item class="LocalScript" referent="13">
+          <Properties>
+            <string name="Name">Main</string>
+            <string name="Source"><![CDATA[-- Click Empire — client entry point.
+-- Wires the UI to the server remotes. No game logic lives here on purpose:
+-- the server is the source of truth, the client just displays it.
+
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
+
+local Shared = ReplicatedStorage:WaitForChild("Shared")
+local Config = require(Shared:WaitForChild("Config"))
+local UI = require(script.Parent:WaitForChild("UI"))
+
+local remotes = ReplicatedStorage:WaitForChild("Remotes")
+local clickRemote = remotes:WaitForChild("Click")
+local buyRemote = remotes:WaitForChild("BuyUpgrade")
+local rebirthRemote = remotes:WaitForChild("Rebirth")
+local stateRemote = remotes:WaitForChild("StateChanged")
+
+-- Mirror the server's click rate limit so we don't waste network traffic
+-- firing clicks the server would ignore anyway.
+local windowStart = 0
+local windowClicks = 0
+
+local ui = UI.new({
+	OnClick = function()
+		local now = os.clock()
+		if now - windowStart >= 1 then
+			windowStart = now
+			windowClicks = 0
+		end
+		if windowClicks >= Config.MaxClicksPerSecond then
+			return
+		end
+		windowClicks += 1
+		clickRemote:FireServer()
+	end,
+	OnBuy = function(upgradeId)
+		buyRemote:FireServer(upgradeId)
+	end,
+	OnRebirth = function()
+		rebirthRemote:FireServer()
+	end,
+})
+
+stateRemote.OnClientEvent:Connect(function(state)
+	ui:Update(state)
+end)
+]]></string>
+          </Properties>
+        </Item>
+        <Item class="ModuleScript" referent="14">
+          <Properties>
+            <string name="Name">UI</string>
+            <string name="Source"><![CDATA[-- Builds the entire interface from code (no manual Studio UI work needed)
+-- and exposes :Update(state) to refresh it whenever the server sends new data.
+
+local Players = game:GetService("Players")
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local TweenService = game:GetService("TweenService")
+
+local Shared = ReplicatedStorage:WaitForChild("Shared")
+local Config = require(Shared:WaitForChild("Config"))
+local Format = require(Shared:WaitForChild("Format"))
+
+local COLORS = {
+	Panel = Color3.fromRGB(28, 30, 40),
+	PanelLight = Color3.fromRGB(44, 47, 62),
+	Accent = Color3.fromRGB(255, 196, 60),
+	AccentDark = Color3.fromRGB(80, 52, 0),
+	Green = Color3.fromRGB(70, 200, 120),
+	Red = Color3.fromRGB(235, 87, 87),
+	Text = Color3.fromRGB(240, 240, 245),
+	TextDim = Color3.fromRGB(160, 165, 180),
+	Disabled = Color3.fromRGB(70, 74, 90),
+}
+
+local function create(className, props)
+	local instance: any = Instance.new(className)
+	for key, value in props do
+		if key ~= "Parent" then
+			instance[key] = value
+		end
+	end
+	instance.Parent = props.Parent
+	return instance
+end
+
+local function addCorner(parent, radius)
+	create("UICorner", { CornerRadius = radius or UDim.new(0, 12), Parent = parent })
+end
+
+local function addStroke(parent, color, thickness)
+	create("UIStroke", {
+		Color = color,
+		Thickness = thickness or 2,
+		ApplyStrokeMode = Enum.ApplyStrokeMode.Border,
+		Parent = parent,
+	})
+end
+
+local function countUpgrades(upgrades)
+	local total = 0
+	for _, amount in upgrades do
+		total += amount
+	end
+	return total
+end
+
+local UI = {}
+UI.__index = UI
+
+function UI.new(callbacks)
+	local self = setmetatable({}, UI)
+	self.Callbacks = callbacks
+	self.State = nil
+	self.UpgradeRows = {}
+	self.RebirthArmed = false
+	self.RebirthArmToken = 0
+	self:Build()
+	return self
+end
+
+function UI:Build()
+	local playerGui = Players.LocalPlayer:WaitForChild("PlayerGui")
+
+	local screenGui = create("ScreenGui", {
+		Name = "ClickEmpireUI",
+		ResetOnSpawn = false,
+		ZIndexBehavior = Enum.ZIndexBehavior.Sibling,
+		Parent = playerGui,
+	})
+	self.ScreenGui = screenGui
+
+	-- sounds (built-in engine sounds, so they always load)
+	self.ClickSound = create("Sound", { SoundId = "rbxasset://sounds/electronicpingshort.wav", Volume = 0.3, Parent = screenGui })
+	self.BuySound = create("Sound", { SoundId = "rbxasset://sounds/electronicpingshort.wav", Volume = 0.5, PlaybackSpeed = 0.55, Parent = screenGui })
+	self.RebirthSound = create("Sound", { SoundId = "rbxasset://sounds/electronicpingshort.wav", Volume = 0.6, PlaybackSpeed = 1.5, Parent = screenGui })
+
+	-- top-center stats card -------------------------------------------------
+	local stats = create("Frame", {
+		AnchorPoint = Vector2.new(0.5, 0),
+		Position = UDim2.new(0.5, 0, 0, 10),
+		Size = UDim2.fromOffset(320, 96),
+		BackgroundColor3 = COLORS.Panel,
+		BackgroundTransparency = 0.08,
+		Parent = screenGui,
+	})
+	addCorner(stats, UDim.new(0, 16))
+	addStroke(stats, COLORS.Accent, 2)
+
+	self.CashLabel = create("TextLabel", {
+		BackgroundTransparency = 1,
+		Position = UDim2.new(0, 0, 0, 6),
+		Size = UDim2.new(1, 0, 0, 42),
+		Font = Enum.Font.GothamBlack,
+		TextSize = 34,
+		TextColor3 = COLORS.Accent,
+		Text = "$0",
+		Parent = stats,
+	})
+
+	self.RateLabel = create("TextLabel", {
+		BackgroundTransparency = 1,
+		Position = UDim2.new(0, 0, 0, 48),
+		Size = UDim2.new(1, 0, 0, 20),
+		Font = Enum.Font.GothamMedium,
+		TextSize = 14,
+		TextColor3 = COLORS.Text,
+		Text = "+1 per click  •  +0 per sec",
+		Parent = stats,
+	})
+
+	self.MultLabel = create("TextLabel", {
+		BackgroundTransparency = 1,
+		Position = UDim2.new(0, 0, 0, 68),
+		Size = UDim2.new(1, 0, 0, 20),
+		Font = Enum.Font.Gotham,
+		TextSize = 13,
+		TextColor3 = COLORS.TextDim,
+		Text = "Rebirth boost: x1",
+		Parent = stats,
+	})
+
+	-- the big CLICK button --------------------------------------------------
+	local clickButton = create("TextButton", {
+		AnchorPoint = Vector2.new(0.5, 1),
+		Position = UDim2.new(0.5, 0, 1, -28),
+		Size = UDim2.fromOffset(170, 170),
+		BackgroundColor3 = COLORS.Accent,
+		Font = Enum.Font.GothamBlack,
+		TextSize = 34,
+		TextColor3 = COLORS.AccentDark,
+		Text = "CLICK!",
+		AutoButtonColor = true,
+		Parent = screenGui,
+	})
+	addCorner(clickButton, UDim.new(1, 0))
+	addStroke(clickButton, Color3.fromRGB(255, 235, 170), 4)
+	create("UIGradient", {
+		Color = ColorSequence.new(Color3.fromRGB(255, 224, 110), Color3.fromRGB(255, 168, 35)),
+		Rotation = 90,
+		Parent = clickButton,
+	})
+	self.ClickScale = create("UIScale", { Parent = clickButton })
+	self.ClickButton = clickButton
+
+	clickButton.Activated:Connect(function()
+		self.ClickScale.Scale = 0.9
+		TweenService:Create(self.ClickScale, TweenInfo.new(0.18, Enum.EasingStyle.Back, Enum.EasingDirection.Out), { Scale = 1 }):Play()
+		self.ClickSound:Play()
+		if self.State then
+			self:SpawnFloatingText("+" .. Format(self.State.ClickPower), COLORS.Accent)
+		end
+		self.Callbacks.OnClick()
+	end)
+
+	self:BuildShop()
+	self:BuildRebirth()
+end
+
+-- shop panel (left side) ---------------------------------------------------
+function UI:BuildShop()
+	local toggle = create("TextButton", {
+		AnchorPoint = Vector2.new(0, 0.5),
+		Position = UDim2.new(0, 12, 0.5, 0),
+		Size = UDim2.fromOffset(110, 48),
+		BackgroundColor3 = COLORS.Green,
+		Font = Enum.Font.GothamBold,
+		TextSize = 18,
+		TextColor3 = COLORS.Text,
+		Text = "🛒 Shop",
+		Parent = self.ScreenGui,
+	})
+	addCorner(toggle, UDim.new(0, 14))
+
+	local panel = create("Frame", {
+		AnchorPoint = Vector2.new(0, 0.5),
+		Position = UDim2.new(0, 132, 0.5, 0),
+		Size = UDim2.new(0, 330, 0.85, 0),
+		BackgroundColor3 = COLORS.Panel,
+		BackgroundTransparency = 0.05,
+		Visible = true,
+		Parent = self.ScreenGui,
+	})
+	create("UISizeConstraint", { MaxSize = Vector2.new(330, 540), Parent = panel })
+	addCorner(panel, UDim.new(0, 16))
+	addStroke(panel, COLORS.PanelLight, 2)
+	self.ShopPanel = panel
+	self.ShopToggle = toggle
+
+	create("TextLabel", {
+		BackgroundTransparency = 1,
+		Position = UDim2.new(0, 16, 0, 8),
+		Size = UDim2.new(1, -32, 0, 36),
+		Font = Enum.Font.GothamBlack,
+		TextSize = 22,
+		TextColor3 = COLORS.Text,
+		TextXAlignment = Enum.TextXAlignment.Left,
+		Text = "UPGRADES",
+		Parent = panel,
+	})
+
+	local scroll = create("ScrollingFrame", {
+		BackgroundTransparency = 1,
+		BorderSizePixel = 0,
+		Position = UDim2.new(0, 10, 0, 48),
+		Size = UDim2.new(1, -20, 1, -58),
+		CanvasSize = UDim2.new(0, 0, 0, 0),
+		AutomaticCanvasSize = Enum.AutomaticSize.Y,
+		ScrollBarThickness = 6,
+		ScrollingDirection = Enum.ScrollingDirection.Y,
+		Parent = panel,
+	})
+	create("UIListLayout", {
+		SortOrder = Enum.SortOrder.LayoutOrder,
+		Padding = UDim.new(0, 8),
+		Parent = scroll,
+	})
+
+	for i, upgrade in Config.Upgrades do
+		local row = create("Frame", {
+			Size = UDim2.new(1, -8, 0, 64),
+			BackgroundColor3 = COLORS.PanelLight,
+			LayoutOrder = i,
+			Parent = scroll,
+		})
+		addCorner(row, UDim.new(0, 12))
+
+		local nameLabel = create("TextLabel", {
+			BackgroundTransparency = 1,
+			Position = UDim2.new(0, 12, 0, 8),
+			Size = UDim2.new(1, -120, 0, 22),
+			Font = Enum.Font.GothamBold,
+			TextSize = 16,
+			TextColor3 = COLORS.Text,
+			TextXAlignment = Enum.TextXAlignment.Left,
+			TextTruncate = Enum.TextTruncate.AtEnd,
+			Text = upgrade.Name,
+			Parent = row,
+		})
+
+		create("TextLabel", {
+			BackgroundTransparency = 1,
+			Position = UDim2.new(0, 12, 0, 32),
+			Size = UDim2.new(1, -120, 0, 20),
+			Font = Enum.Font.Gotham,
+			TextSize = 13,
+			TextColor3 = COLORS.TextDim,
+			TextXAlignment = Enum.TextXAlignment.Left,
+			Text = upgrade.Desc,
+			Parent = row,
+		})
+
+		local buyButton = create("TextButton", {
+			AnchorPoint = Vector2.new(1, 0.5),
+			Position = UDim2.new(1, -10, 0.5, 0),
+			Size = UDim2.fromOffset(92, 44),
+			BackgroundColor3 = COLORS.Disabled,
+			Font = Enum.Font.GothamBold,
+			TextSize = 15,
+			TextColor3 = COLORS.Text,
+			Text = "$" .. Format(upgrade.BaseCost),
+			AutoButtonColor = false,
+			Parent = row,
+		})
+		addCorner(buyButton, UDim.new(0, 10))
+
+		buyButton.Activated:Connect(function()
+			self.Callbacks.OnBuy(upgrade.Id)
+		end)
+
+		self.UpgradeRows[upgrade.Id] = {
+			Upgrade = upgrade,
+			NameLabel = nameLabel,
+			BuyButton = buyButton,
+		}
+	end
+
+	toggle.Activated:Connect(function()
+		panel.Visible = not panel.Visible
+		toggle.Text = panel.Visible and "✕ Close" or "🛒 Shop"
+	end)
+	toggle.Text = "✕ Close" -- shop starts open
+end
+
+-- rebirth panel (top right) ------------------------------------------------
+function UI:BuildRebirth()
+	local toggle = create("TextButton", {
+		AnchorPoint = Vector2.new(1, 0),
+		Position = UDim2.new(1, -12, 0, 10),
+		Size = UDim2.fromOffset(130, 48),
+		BackgroundColor3 = COLORS.Red,
+		Font = Enum.Font.GothamBold,
+		TextSize = 18,
+		TextColor3 = COLORS.Text,
+		Text = "⭐ Rebirth",
+		Parent = self.ScreenGui,
+	})
+	addCorner(toggle, UDim.new(0, 14))
+
+	local panel = create("Frame", {
+		AnchorPoint = Vector2.new(1, 0),
+		Position = UDim2.new(1, -12, 0, 66),
+		Size = UDim2.fromOffset(300, 196),
+		BackgroundColor3 = COLORS.Panel,
+		BackgroundTransparency = 0.05,
+		Visible = false,
+		Parent = self.ScreenGui,
+	})
+	addCorner(panel, UDim.new(0, 16))
+	addStroke(panel, COLORS.Red, 2)
+
+	create("TextLabel", {
+		BackgroundTransparency = 1,
+		Position = UDim2.new(0, 16, 0, 10),
+		Size = UDim2.new(1, -32, 0, 28),
+		Font = Enum.Font.GothamBlack,
+		TextSize = 20,
+		TextColor3 = COLORS.Red,
+		TextXAlignment = Enum.TextXAlignment.Left,
+		Text = "⭐ REBIRTH",
+		Parent = panel,
+	})
+
+	create("TextLabel", {
+		BackgroundTransparency = 1,
+		Position = UDim2.new(0, 16, 0, 40),
+		Size = UDim2.new(1, -32, 0, 56),
+		Font = Enum.Font.Gotham,
+		TextSize = 14,
+		TextColor3 = COLORS.Text,
+		TextWrapped = true,
+		TextXAlignment = Enum.TextXAlignment.Left,
+		TextYAlignment = Enum.TextYAlignment.Top,
+		Text = "Reset your cash and upgrades in exchange for a permanent boost to everything you earn!",
+		Parent = panel,
+	})
+
+	self.RebirthInfo = create("TextLabel", {
+		BackgroundTransparency = 1,
+		Position = UDim2.new(0, 16, 0, 98),
+		Size = UDim2.new(1, -32, 0, 22),
+		Font = Enum.Font.GothamBold,
+		TextSize = 14,
+		TextColor3 = COLORS.Accent,
+		TextXAlignment = Enum.TextXAlignment.Left,
+		Text = "Cost: $100K   •   Next boost: x2",
+		Parent = panel,
+	})
+
+	self.RebirthConfirm = create("TextButton", {
+		Position = UDim2.new(0, 16, 1, -56),
+		Size = UDim2.new(1, -32, 0, 44),
+		BackgroundColor3 = COLORS.Disabled,
+		Font = Enum.Font.GothamBold,
+		TextSize = 17,
+		TextColor3 = COLORS.Text,
+		Text = "Rebirth",
+		AutoButtonColor = false,
+		Parent = panel,
+	})
+	addCorner(self.RebirthConfirm, UDim.new(0, 10))
+
+	toggle.Activated:Connect(function()
+		panel.Visible = not panel.Visible
+	end)
+
+	self.RebirthConfirm.Activated:Connect(function()
+		local state = self.State
+		if not state or state.Cash < state.RebirthCost then
+			return
+		end
+		if self.RebirthArmed then
+			self.RebirthArmed = false
+			self.RebirthConfirm.Text = "Rebirth"
+			self.Callbacks.OnRebirth()
+		else
+			self.RebirthArmed = true
+			self.RebirthArmToken += 1
+			local token = self.RebirthArmToken
+			self.RebirthConfirm.Text = "Click again to confirm!"
+			task.delay(3, function()
+				if self.RebirthArmToken == token and self.RebirthArmed then
+					self.RebirthArmed = false
+					self.RebirthConfirm.Text = "Rebirth"
+				end
+			end)
+		end
+	end)
+end
+
+-- floating "+5" text above the click button ---------------------------------
+function UI:SpawnFloatingText(text, color)
+	local label = create("TextLabel", {
+		BackgroundTransparency = 1,
+		AnchorPoint = Vector2.new(0.5, 1),
+		Position = UDim2.new(0.5, math.random(-80, 80), 1, -210),
+		Size = UDim2.fromOffset(160, 32),
+		Font = Enum.Font.GothamBlack,
+		TextSize = 26,
+		TextColor3 = color or COLORS.Accent,
+		TextStrokeTransparency = 0.6,
+		Text = text,
+		Parent = self.ScreenGui,
+	})
+	local tween = TweenService:Create(
+		label,
+		TweenInfo.new(0.8, Enum.EasingStyle.Quad, Enum.EasingDirection.Out),
+		{
+			Position = label.Position - UDim2.fromOffset(0, 90),
+			TextTransparency = 1,
+			TextStrokeTransparency = 1,
+		}
+	)
+	tween.Completed:Once(function()
+		label:Destroy()
+	end)
+	tween:Play()
+end
+
+-- refresh every label/button from the latest server state -------------------
+function UI:Update(state)
+	local previous = self.State
+	self.State = state
+
+	-- celebrate things that just happened
+	if previous then
+		if state.Rebirths > previous.Rebirths then
+			self.RebirthSound:Play()
+			self:SpawnFloatingText(("REBIRTH! x%s earnings"):format(state.Multiplier), COLORS.Red)
+		elseif countUpgrades(state.Upgrades) > countUpgrades(previous.Upgrades) then
+			self.BuySound:Play()
+		end
+	end
+
+	self.CashLabel.Text = "$" .. Format(state.Cash)
+	self.RateLabel.Text = ("+%s per click  •  +%s per sec"):format(Format(state.ClickPower), Format(state.AutoPower))
+	self.MultLabel.Text = ("Rebirth boost: x%s"):format(state.Multiplier)
+
+	for id, row in self.UpgradeRows do
+		local owned = state.Upgrades[id] or 0
+		local cost = Config.GetUpgradeCost(row.Upgrade, owned)
+		if owned > 0 then
+			row.NameLabel.Text = ("%s  ×%d"):format(row.Upgrade.Name, owned)
+		else
+			row.NameLabel.Text = row.Upgrade.Name
+		end
+		row.BuyButton.Text = "$" .. Format(cost)
+		local affordable = state.Cash >= cost
+		row.BuyButton.BackgroundColor3 = if affordable then COLORS.Green else COLORS.Disabled
+		row.BuyButton.AutoButtonColor = affordable
+	end
+
+	self.RebirthInfo.Text = ("Cost: $%s   •   Next boost: x%s"):format(Format(state.RebirthCost), state.NextMultiplier)
+	local canRebirth = state.Cash >= state.RebirthCost
+	self.RebirthConfirm.BackgroundColor3 = if canRebirth then COLORS.Red else COLORS.Disabled
+	self.RebirthConfirm.AutoButtonColor = canRebirth
+	if not self.RebirthArmed then
+		self.RebirthConfirm.Text = if canRebirth then "Rebirth" else "Not enough cash"
+	end
+end
+
+return UI
+]]></string>
+          </Properties>
+        </Item>
+      </Item>
+    </Item>
+  </Item>
+  <Item class="Workspace" referent="15">
+    <Properties>
+      <string name="Name">Workspace</string>
+      <bool name="NeedsPivotMigration">false</bool>
+    </Properties>
+    <Item class="Part" referent="16">
+      <Properties>
+        <string name="Name">Baseplate</string>
+        <bool name="Anchored">true</bool>
+        <token name="BottomSurface">0</token>
+        <Color3uint8 name="Color3uint8">3685191</Color3uint8>
+        <bool name="Locked">true</bool>
+        <token name="Material">800</token>
+        <Vector3 name="Position">
+          <X>0</X>
+          <Y>-8</Y>
+          <Z>0</Z>
+        </Vector3>
+        <Vector3 name="size">
+          <X>512</X>
+          <Y>16</Y>
+          <Z>512</Z>
+        </Vector3>
+        <token name="TopSurface">0</token>
+      </Properties>
+    </Item>
+    <Item class="SpawnLocation" referent="17">
+      <Properties>
+        <string name="Name">SpawnLocation</string>
+        <bool name="Anchored">true</bool>
+        <Color3uint8 name="Color3uint8">16762688</Color3uint8>
+        <int name="Duration">0</int>
+        <token name="Material">272</token>
+        <Vector3 name="Position">
+          <X>0</X>
+          <Y>0.5</Y>
+          <Z>0</Z>
+        </Vector3>
+        <Vector3 name="size">
+          <X>12</X>
+          <Y>1</Y>
+          <Z>12</Z>
+        </Vector3>
+        <token name="TopSurface">0</token>
+      </Properties>
+    </Item>
+  </Item>
+</roblox>
