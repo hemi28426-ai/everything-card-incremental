@@ -71,7 +71,7 @@ function UI:Build()
 	local stats = create("Frame", {
 		AnchorPoint = Vector2.new(0.5, 0),
 		Position = UDim2.new(0.5, 0, 0, 10),
-		Size = UDim2.fromOffset(340, 92),
+		Size = UDim2.fromOffset(340, 112),
 		BackgroundColor3 = COLORS.Panel,
 		BackgroundTransparency = 0.08,
 		Parent = screenGui,
@@ -109,12 +109,22 @@ function UI:Build()
 		Text = "Rolls: 0",
 		Parent = stats,
 	})
+	self.TokenLabel = create("TextLabel", {
+		BackgroundTransparency = 1,
+		Position = UDim2.new(0, 0, 0, 84),
+		Size = UDim2.new(1, 0, 0, 20),
+		Font = Enum.Font.GothamBold,
+		TextSize = 13,
+		TextColor3 = COLORS.Gold,
+		Text = "⭐ Tokens: 0  •  Rebirths: 0",
+		Parent = stats,
+	})
 
 	-- ticker (announcements)
 	self.TickerLabel = create("TextLabel", {
 		BackgroundTransparency = 1,
 		AnchorPoint = Vector2.new(0.5, 0),
-		Position = UDim2.new(0.5, 0, 0, 108),
+		Position = UDim2.new(0.5, 0, 0, 128),
 		Size = UDim2.new(0, 500, 0, 22),
 		Font = Enum.Font.GothamBold,
 		TextSize = 16,
@@ -200,6 +210,7 @@ function UI:Build()
 
 	self:BuildCollection()
 	self:BuildSettings()
+	self:BuildRebirthModal()
 	task.spawn(function()
 		self:BuildPadSurfaces()
 	end)
@@ -648,9 +659,172 @@ function UI:BuildPadSurfaces()
 			CostLabel = costLabel,
 		}
 	end
+
+	-- the rebirth altar: live progress text + client-side confirm
+	local altar = tree:WaitForChild("RebirthAltar", 10)
+	if altar then
+		local gui = create("SurfaceGui", {
+			Adornee = altar,
+			Face = Enum.NormalId.Top,
+			SizingMode = Enum.SurfaceGuiSizingMode.PixelsPerStud,
+			PixelsPerStud = 22,
+			Parent = playerGui,
+		})
+		local bg = create("Frame", {
+			BackgroundTransparency = 1,
+			Size = UDim2.new(1, 0, 1, 0),
+			Rotation = 180, -- approached from the bridge (north)
+			Parent = gui,
+		})
+		create("TextLabel", {
+			BackgroundTransparency = 1,
+			Position = UDim2.new(0, 8, 0, 8),
+			Size = UDim2.new(1, -16, 0, 56),
+			Font = Enum.Font.GothamBlack,
+			TextSize = 34,
+			TextColor3 = Color3.fromRGB(60, 40, 0),
+			Text = "⭐ REBIRTH",
+			Parent = bg,
+		})
+		self.AltarLabel = create("TextLabel", {
+			BackgroundTransparency = 1,
+			Position = UDim2.new(0, 10, 0, 64),
+			Size = UDim2.new(1, -20, 1, -72),
+			Font = Enum.Font.GothamBold,
+			TextSize = 20,
+			TextWrapped = true,
+			TextYAlignment = Enum.TextYAlignment.Top,
+			TextColor3 = Color3.fromRGB(60, 40, 0),
+			Text = "",
+			Parent = bg,
+		})
+		local prompt = altar:FindFirstChild("RebirthPrompt")
+		if prompt and prompt:IsA("ProximityPrompt") then
+			prompt.Triggered:Connect(function()
+				self:OpenRebirthModal()
+			end)
+		end
+	end
+
 	if self.State then
 		self:UpdatePads()
 	end
+end
+
+-- confirm dialog so a rebirth is never a misclick
+function UI:BuildRebirthModal()
+	local overlay = create("TextButton", {
+		BackgroundColor3 = Color3.fromRGB(10, 6, 20),
+		BackgroundTransparency = 0.4,
+		Size = UDim2.new(1, 0, 1, 0),
+		Text = "",
+		AutoButtonColor = false,
+		Visible = false,
+		ZIndex = 20,
+		Parent = self.ScreenGui,
+	})
+	overlay.Activated:Connect(function()
+		overlay.Visible = false
+	end)
+	self.RebirthOverlay = overlay
+
+	local panel = create("Frame", {
+		AnchorPoint = Vector2.new(0.5, 0.5),
+		Position = UDim2.new(0.5, 0, 0.5, 0),
+		Size = UDim2.fromOffset(360, 250),
+		BackgroundColor3 = COLORS.Panel,
+		ZIndex = 21,
+		Parent = overlay,
+	})
+	addCorner(panel, UDim.new(0, 18))
+	create("UIStroke", { Color = COLORS.Gold, Thickness = 3, Parent = panel })
+
+	create("TextLabel", {
+		BackgroundTransparency = 1,
+		Position = UDim2.new(0, 0, 0, 12),
+		Size = UDim2.new(1, 0, 0, 30),
+		Font = Enum.Font.GothamBlack,
+		TextSize = 24,
+		TextColor3 = COLORS.Gold,
+		Text = "⭐ REBIRTH?",
+		ZIndex = 21,
+		Parent = panel,
+	})
+	self.RebirthModalBody = create("TextLabel", {
+		BackgroundTransparency = 1,
+		Position = UDim2.new(0, 20, 0, 48),
+		Size = UDim2.new(1, -40, 0, 130),
+		Font = Enum.Font.GothamMedium,
+		TextSize = 14,
+		TextWrapped = true,
+		TextYAlignment = Enum.TextYAlignment.Top,
+		TextColor3 = COLORS.Text,
+		Text = "",
+		ZIndex = 21,
+		Parent = panel,
+	})
+	self.RebirthConfirmButton = create("TextButton", {
+		Position = UDim2.new(0, 20, 1, -58),
+		Size = UDim2.new(0.5, -30, 0, 44),
+		BackgroundColor3 = COLORS.Gold,
+		Font = Enum.Font.GothamBlack,
+		TextSize = 17,
+		TextColor3 = Color3.fromRGB(60, 40, 0),
+		Text = "REBIRTH",
+		ZIndex = 21,
+		Parent = panel,
+	})
+	addCorner(self.RebirthConfirmButton, UDim.new(0, 12))
+	self.RebirthConfirmButton.Activated:Connect(function()
+		overlay.Visible = false
+		self.Callbacks.OnRebirth()
+	end)
+
+	local cancel = create("TextButton", {
+		AnchorPoint = Vector2.new(1, 0),
+		Position = UDim2.new(1, -20, 1, -58),
+		Size = UDim2.new(0.5, -30, 0, 44),
+		BackgroundColor3 = COLORS.Disabled,
+		Font = Enum.Font.GothamBold,
+		TextSize = 15,
+		TextColor3 = COLORS.Text,
+		Text = "Cancel",
+		ZIndex = 21,
+		Parent = panel,
+	})
+	addCorner(cancel, UDim.new(0, 12))
+	cancel.Activated:Connect(function()
+		overlay.Visible = false
+	end)
+end
+
+function UI:OpenRebirthModal()
+	if not self.State then
+		return
+	end
+	self:RefreshRebirthModal()
+	self.RebirthOverlay.Visible = true
+end
+
+function UI:RefreshRebirthModal()
+	local state = self.State
+	local r = state.Rebirth
+	local ready = r.HasLegendary and r.TokensIfNow >= 1
+	local total = r.TokensIfNow + (r.TokensIfNow >= 1 and r.BonusTokens or 0)
+
+	local lines = {
+		("You will gain:  ⭐ %d token%s"):format(total, total == 1 and "" or "s"),
+		"",
+		("KEPT:  %s+ cards, golden tree, backpack, rolls"):format(r.KeepTier),
+		("WIPED:  coins, purple upgrades, all cards below %s"):format(r.KeepTier),
+		"",
+		r.HasLegendary and "✓ Legendary+ card owned" or "✗ You need a Legendary+ card",
+		r.TokensIfNow >= 1 and ("✓ %s coins banked"):format(Format(state.Coins))
+			or ("✗ Need %s coins (you have %s)"):format(Format(Config.Rebirth.BaseCoins), Format(state.Coins)),
+	}
+	self.RebirthModalBody.Text = table.concat(lines, "\n")
+	self.RebirthConfirmButton.BackgroundColor3 = if ready then COLORS.Gold else COLORS.Disabled
+	self.RebirthConfirmButton.AutoButtonColor = ready
 end
 
 local function setPadVisible(entry, visible)
@@ -672,18 +846,19 @@ function UI:UpdatePads()
 	local state = self.State
 	for nodeId, entry in self.Pads do
 		local treeNode = Config.NodeById[nodeId]
-		local level = state.Upgrades[nodeId] or 0
-		local unlocked = not treeNode.Requires or (state.Upgrades[treeNode.Requires] or 0) >= 1
+		local levels = if treeNode.IsRebirth then state.RebirthUpgrades else state.Upgrades
+		local level = levels[nodeId] or 0
+		local unlocked = not treeNode.Requires or (levels[treeNode.Requires] or 0) >= 1
 
 		setPadVisible(entry, unlocked)
 		if not unlocked then
 			continue
 		end
 
-		-- pads you own glow warm gold (local-only color change)
+		-- pads you own glow warm white (local-only color change)
 		if entry.Trim then
 			entry.Trim.Color = if level >= 1
-				then Color3.fromRGB(255, 240, 160)
+				then Color3.fromRGB(255, 250, 220)
 				else (Config.BranchColors[treeNode.Branch] or Color3.fromRGB(200, 200, 200))
 		end
 
@@ -696,10 +871,30 @@ function UI:UpdatePads()
 		else
 			local cost = Config.GetNodeCost(treeNode, level)
 			local prefix = if treeNode.MaxLevel == nil then ("Lv %d\n"):format(level) else ""
-			entry.CostLabel.Text = prefix .. "🪙 " .. Format(cost)
-			entry.CostLabel.TextColor3 = if state.Coins >= cost
+			local icon = if treeNode.IsRebirth then "⭐" else "🪙"
+			local wallet = if treeNode.IsRebirth then state.RebirthTokens else state.Coins
+			entry.CostLabel.Text = prefix .. icon .. " " .. Format(cost)
+			entry.CostLabel.TextColor3 = if wallet >= cost
 				then Color3.fromRGB(10, 60, 25)
 				else Color3.fromRGB(120, 20, 30)
+		end
+	end
+
+	-- altar progress text
+	if self.AltarLabel then
+		local r = state.Rebirth
+		if r.HasLegendary and r.TokensIfNow >= 1 then
+			local total = r.TokensIfNow + r.BonusTokens
+			self.AltarLabel.Text = ("READY!  Hold E for ⭐ %d token%s\nNext token at 🪙 %s")
+				:format(total, total == 1 and "" or "s", Format(r.NextAt))
+		else
+			self.AltarLabel.Text = ("%s Legendary+ card\n%s 🪙 %s / %s")
+				:format(
+					r.HasLegendary and "✓" or "✗",
+					r.TokensIfNow >= 1 and "✓" or "✗",
+					Format(state.Coins),
+					Format(Config.Rebirth.BaseCoins)
+				)
 		end
 	end
 end
@@ -763,8 +958,15 @@ function UI:Update(state)
 		bestTier and ("  •  Best: " .. bestTier.Name) or ""
 	)
 
-	self.MultiBadge.Visible = state.Stats.MultiRoll > 1
-	self.MultiBadge.Text = "x" .. state.Stats.MultiRoll
+	self.TokenLabel.Text = ("⭐ Tokens: %s  •  Rebirths: %s"):format(Format(state.RebirthTokens), Format(state.Rebirths))
+
+	local cardsPerRoll = state.Stats.MultiRoll * state.Stats.CardOutputMult
+	self.MultiBadge.Visible = cardsPerRoll > 1
+	self.MultiBadge.Text = "x" .. cardsPerRoll
+
+	if self.RebirthOverlay and self.RebirthOverlay.Visible then
+		self:RefreshRebirthModal()
+	end
 
 	self.AutoButton.Visible = state.Stats.AutoUnlocked
 	self.AutoButton.Text = state.AutoOn and "AUTO: ON" or "AUTO: OFF"

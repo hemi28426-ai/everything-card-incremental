@@ -18,6 +18,7 @@ local sellCardRemote = remotes:WaitForChild("SellCard")
 local setAutoSellRemote = remotes:WaitForChild("SetAutoSell")
 local toggleAutoRemote = remotes:WaitForChild("ToggleAuto")
 local backpackRemote = remotes:WaitForChild("UpgradeBackpack")
+local rebirthRemote = remotes:WaitForChild("Rebirth")
 local stateRemote = remotes:WaitForChild("StateChanged")
 local rollResultRemote = remotes:WaitForChild("RollResult")
 local tickerRemote = remotes:WaitForChild("Ticker")
@@ -63,6 +64,9 @@ ui = UI.new({
 	end,
 	OnUpgradeBackpack = function()
 		backpackRemote:FireServer()
+	end,
+	OnRebirth = function()
+		rebirthRemote:FireServer()
 	end,
 })
 

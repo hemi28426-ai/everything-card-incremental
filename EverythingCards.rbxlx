@@ -78,7 +78,7 @@ Config.Roll = {
 	BaseAutoCooldown = 6.0,
 	MinAutoCooldown = 0.5,
 	BaseLuckChance = 0.02, -- chance a roll draws from the discovered rare pool
-	MaxLuckChance = 0.6,
+	MaxLuckChance = 0.75,
 	BaseGodChance = 1 / 5000, -- chance a roll hits the legends list
 	BaseFreshInterval = 4.0, -- seconds between background account scans
 	MaxUserId = 8_500_000_000, -- rough top of the current id space
@@ -116,6 +116,29 @@ end
 
 function Config.GetBackpackCost(level)
 	return math.floor(Config.Backpack.BaseCost * Config.Backpack.CostMult ^ level)
+end
+
+-- ===== Rebirth =============================================================
+-- Rebirth needs a Legendary+ card and at least BaseCoins banked. Tokens
+-- earned scale with how much you banked: 20K = 1, 160K = 2, 1.28M = 3...
+-- Rebirthing wipes coins, the purple tree, and every card below Mythic
+-- (Legendaries included). Mythic+, backpack, rolls, and the golden tree stay.
+Config.Rebirth = {
+	BaseCoins = 20000,
+	CoinsMult = 8,
+	KeepTier = "Mythic", -- cards at/above this survive (Legendary Keeper lowers it)
+}
+
+function Config.GetRebirthTokens(coins)
+	if coins < Config.Rebirth.BaseCoins then
+		return 0
+	end
+	return math.floor(math.log(coins / Config.Rebirth.BaseCoins) / math.log(Config.Rebirth.CoinsMult) + 1e-9) + 1
+end
+
+-- coins needed to earn one more token than `tokens`
+function Config.GetCoinsForTokens(tokens)
+	return math.floor(Config.Rebirth.BaseCoins * Config.Rebirth.CoinsMult ^ math.max(tokens, 0))
 end
 
 Config.AutosaveInterval = 60
@@ -178,10 +201,51 @@ node({ Id = "infhaste", Name = "∞ Roll Haste", Desc = "x0.97 roll cooldown, fo
 node({ Id = "infauto", Name = "∞ Auto Efficiency", Desc = "x0.97 auto cooldown, forever", Branch = "Endgame", Pos = { 21, -48 }, Cost = 750000, CostMult = 1.7, MaxLevel = nil, Effect = "InfAuto", Value = 0.97 })
 
 Config.Tree = T
+
+-- ===== Golden (rebirth) tree ===============================================
+-- Bought with Rebirth Tokens on the golden island. Deliberately overpowered.
+-- IsRebirth marks them; levels live in data.RebirthUpgrades and survive
+-- every rebirth.
+local R = {}
+local function rnode(def)
+	def.IsRebirth = true
+	def.Branch = "Rebirth"
+	table.insert(R, def)
+end
+
+-- row 1 (z -104)
+rnode({ Id = "carddouble", Name = "Card Doubler", Desc = "2x cards from every roll", Pos = { -45, -104 }, Cost = 3 })
+rnode({ Id = "goldinc", Name = "Golden Income", Desc = "x3 ALL coin earnings, forever", Pos = { -15, -104 }, Cost = 2, CostMult = 1.7, MaxLevel = nil })
+rnode({ Id = "eternalluck", Name = "Eternal Luck", Desc = "+10% rare pool chance, forever", Pos = { 15, -104 }, Cost = 2, CostMult = 1.8, MaxLevel = nil })
+rnode({ Id = "quickstart", Name = "Quick Start", Desc = "+10K starting coins after rebirth", Pos = { 45, -104 }, Cost = 1, CostMult = 2, MaxLevel = nil })
+-- row 2 (z -120)
+rnode({ Id = "cardquad", Name = "Card Quadrupler", Desc = "2x cards AGAIN (4x total)", Pos = { -45, -120 }, Cost = 8, Requires = "carddouble" })
+rnode({ Id = "timelord", Name = "Time Lord", Desc = "Roll cooldown x0.6", Pos = { -15, -120 }, Cost = 4 })
+rnode({ Id = "bigbag", Name = "Bottomless Bag", Desc = "+30 backpack capacity", Pos = { 15, -120 }, Cost = 2, CostMult = 1.6, MaxLevel = nil })
+rnode({ Id = "dupegold", Name = "Dupe Tycoon", Desc = "+100% dupe & sell value", Pos = { 45, -120 }, Cost = 2, CostMult = 1.7, MaxLevel = nil })
+-- row 3 (z -136)
+rnode({ Id = "overdrive", Name = "Scanner Overdrive", Desc = "Fresh accounts found 2x faster", Pos = { -45, -136 }, Cost = 3 })
+rnode({ Id = "chrono", Name = "Chrono Master", Desc = "Auto-roll cooldown x0.6", Pos = { -15, -136 }, Cost = 4, Requires = "timelord" })
+rnode({ Id = "slotmaster", Name = "Slot Master", Desc = "+1 equip slot", Pos = { 15, -136 }, Cost = 4, CostMult = 1.8, MaxLevel = nil })
+rnode({ Id = "luckyseven", Name = "Lucky Sevens", Desc = "Every 7th roll is Rare or better", Pos = { 45, -136 }, Cost = 6 })
+-- row 4 (z -152)
+rnode({ Id = "tokenhoard", Name = "Token Hoarder", Desc = "+1 token from every rebirth", Pos = { -45, -152 }, Cost = 12, MaxLevel = 2, CostMult = 1 })
+rnode({ Id = "keeper", Name = "Legendary Keeper", Desc = "Legendary cards survive rebirth", Pos = { -15, -152 }, Cost = 10 })
+rnode({ Id = "godmagnet", Name = "God Magnet", Desc = "3x chance to roll a legend", Pos = { 15, -152 }, Cost = 5 })
+rnode({ Id = "dreamprofit", Name = "Dream Profits", Desc = "Offline earnings: full rate, 24h cap", Pos = { 45, -152 }, Cost = 5 })
+
+Config.RebirthTree = R
+
 Config.NodeById = {}
 for _, treeNode in Config.Tree do
 	if treeNode.MaxLevel == nil and treeNode.CostMult == nil then
 		treeNode.MaxLevel = 1 -- plain nodes are one-time purchases
+	end
+	Config.NodeById[treeNode.Id] = treeNode
+end
+for _, treeNode in Config.RebirthTree do
+	if treeNode.MaxLevel == nil and treeNode.CostMult == nil then
+		treeNode.MaxLevel = 1
 	end
 	Config.NodeById[treeNode.Id] = treeNode
 end
@@ -191,17 +255,20 @@ Config.BranchColors = {
 	Luck = Color3.fromRGB(90, 210, 120),
 	Economy = Color3.fromRGB(255, 190, 60),
 	Endgame = Color3.fromRGB(230, 60, 200),
+	Rebirth = Color3.fromRGB(255, 215, 60),
 }
 
 function Config.GetNodeCost(treeNode, level)
 	return math.floor(treeNode.Cost * (treeNode.CostMult or 1) ^ level)
 end
 
--- Turns a player's owned upgrade levels into their effective stats.
-function Config.ComputeStats(upgrades)
+-- Turns a player's owned upgrade levels (both trees) into effective stats.
+function Config.ComputeStats(upgrades, rebirthUpgrades)
+	rebirthUpgrades = rebirthUpgrades or {}
 	local stats = {
 		RollCooldown = Config.Roll.BaseCooldown,
 		MultiRoll = 1,
+		CardOutputMult = 1, -- golden tree: multiplies cards per roll
 		AutoUnlocked = false,
 		AutoCooldown = Config.Roll.BaseAutoCooldown,
 		AutoMulti = false,
@@ -211,7 +278,14 @@ function Config.ComputeStats(upgrades)
 		CoinMult = 1,
 		EquipSlots = Config.Economy.BaseEquipSlots,
 		DupeMult = 1,
+		BackpackBonus = 0,
 		OfflineUnlocked = false,
+		OfflineFraction = Config.Economy.OfflineFraction,
+		OfflineCapHours = Config.Economy.OfflineCapHours,
+		StartCoins = 0,
+		BonusTokens = 0,
+		KeepLegendary = false,
+		LuckySevens = false,
 	}
 	for _, treeNode in Config.Tree do
 		local level = upgrades[treeNode.Id] or 0
@@ -252,6 +326,38 @@ function Config.ComputeStats(upgrades)
 			end
 		end
 	end
+	-- golden tree effects (levels survive rebirth)
+	local function rLevel(id)
+		return rebirthUpgrades[id] or 0
+	end
+	stats.CardOutputMult = 2 ^ (math.min(rLevel("carddouble"), 1) + math.min(rLevel("cardquad"), 1))
+	stats.CoinMult *= 3 ^ rLevel("goldinc")
+	stats.LuckChance += 0.10 * rLevel("eternalluck")
+	stats.StartCoins = 10000 * rLevel("quickstart")
+	if rLevel("timelord") > 0 then
+		stats.RollCooldown *= 0.6
+	end
+	stats.BackpackBonus += 30 * rLevel("bigbag")
+	stats.DupeMult += 1 * rLevel("dupegold")
+	if rLevel("overdrive") > 0 then
+		stats.FreshInterval *= 0.5
+	end
+	if rLevel("chrono") > 0 then
+		stats.AutoCooldown *= 0.6
+	end
+	stats.EquipSlots += rLevel("slotmaster")
+	stats.LuckySevens = rLevel("luckyseven") > 0
+	stats.BonusTokens = rLevel("tokenhoard")
+	stats.KeepLegendary = rLevel("keeper") > 0
+	if rLevel("godmagnet") > 0 then
+		stats.GodChance *= 3
+	end
+	if rLevel("dreamprofit") > 0 then
+		stats.OfflineUnlocked = true
+		stats.OfflineFraction = 1
+		stats.OfflineCapHours = 24
+	end
+
 	stats.RollCooldown = math.max(stats.RollCooldown, Config.Roll.MinCooldown)
 	stats.AutoCooldown = math.max(stats.AutoCooldown, Config.Roll.MinAutoCooldown)
 	stats.LuckChance = math.min(stats.LuckChance, Config.Roll.MaxLuckChance)
@@ -617,13 +723,14 @@ local function anyCachedCard()
 	return nil
 end
 
--- Draw one card for a roll. Never fails.
-function CardPool.Draw(stats)
+-- Draw one card for a roll. Never fails. forcePool (Lucky Sevens) makes the
+-- roll come from the discovered Rare+ pool when it has anything in it.
+function CardPool.Draw(stats, forcePool)
 	if #legendCards > 0 and math.random() < stats.GodChance then
 		return legendCards[math.random(1, #legendCards)]
 	end
 
-	if math.random() < stats.LuckChance then
+	if forcePool or math.random() < stats.LuckChance then
 		local poolCard = drawFromRarePool()
 		if poolCard then
 			return poolCard
@@ -684,6 +791,9 @@ local DEFAULT_DATA = {
 	TotalRolls = 0, -- all-time, never goes down
 	RollsBalance = 0, -- spendable rolls (backpack upgrades cost these)
 	BackpackLevel = 0,
+	Rebirths = 0,
+	RebirthTokens = 0,
+	RebirthUpgrades = {}, -- golden tree levels; survive every rebirth
 	BestTier = 0, -- highest tier index ever pulled
 	Upgrades = {}, -- nodeId -> level
 	Cards = {}, -- userId (as string) -> {Name, DisplayName, Tier, Boost, Traits, Flavor?, Count}
@@ -944,6 +1054,7 @@ local sellCardRemote = makeRemote("SellCard")
 local setAutoSellRemote = makeRemote("SetAutoSell")
 local toggleAutoRemote = makeRemote("ToggleAuto")
 local backpackRemote = makeRemote("UpgradeBackpack")
+local rebirthRemote = makeRemote("Rebirth")
 local stateRemote = makeRemote("StateChanged")
 local rollResultRemote = makeRemote("RollResult")
 local tickerRemote = makeRemote("Ticker")
@@ -974,24 +1085,50 @@ local function countUnique(cards)
 	return count
 end
 
+local function hasLegendaryPlus(data)
+	local needed = Config.TierByName.Legendary.Index
+	for _, card in data.Cards do
+		local tier = Config.TierByName[card.Tier]
+		if tier and tier.Index >= needed then
+			return true
+		end
+	end
+	return false
+end
+
+local function backpackCapacity(session)
+	return Config.GetBackpackCapacity(session.Data.BackpackLevel) + session.Stats.BackpackBonus
+end
+
 local function buildState(session, includeCards)
 	local data = session.Data
+	local tokensIfNow = Config.GetRebirthTokens(data.Coins)
 	local state = {
 		Coins = data.Coins,
 		TotalEarned = data.TotalEarned,
 		TotalRolls = data.TotalRolls,
 		RollsBalance = data.RollsBalance,
 		BackpackLevel = data.BackpackLevel,
-		BackpackCapacity = Config.GetBackpackCapacity(data.BackpackLevel),
+		BackpackCapacity = backpackCapacity(session),
 		BackpackCost = Config.GetBackpackCost(data.BackpackLevel),
 		CardCount = countUnique(data.Cards),
 		AutoSell = data.AutoSell,
 		BestTier = data.BestTier,
 		Upgrades = data.Upgrades,
+		RebirthUpgrades = data.RebirthUpgrades,
 		Equipped = data.Equipped,
 		AutoOn = data.AutoOn,
 		Stats = session.Stats,
 		CoinsPerSec = computeRate(data, session.Stats),
+		Rebirths = data.Rebirths,
+		RebirthTokens = data.RebirthTokens,
+		Rebirth = {
+			HasLegendary = hasLegendaryPlus(data),
+			TokensIfNow = tokensIfNow,
+			BonusTokens = session.Stats.BonusTokens,
+			NextAt = Config.GetCoinsForTokens(tokensIfNow),
+			KeepTier = if session.Stats.KeepLegendary then "Legendary" else Config.Rebirth.KeepTier,
+		},
 	}
 	if includeCards then
 		state.Cards = data.Cards
@@ -1021,7 +1158,8 @@ end
 -- Adds a rolled card to the collection. Auto-sell settings convert the pull
 -- straight to coins; dupes stack for free; a NEW unique card when the
 -- backpack is full gets auto-sold too.
-local function addCardToCollection(data, stats, card)
+local function addCardToCollection(session, card)
+	local data, stats = session.Data, session.Stats
 	local tier = Config.TierByName[card.Tier]
 	if data.AutoSell[card.Tier] then
 		local soldFor = math.floor(tier.SellValue * stats.DupeMult)
@@ -1035,7 +1173,7 @@ local function addCardToCollection(data, stats, card)
 		owned.Count += 1
 		return { IsNew = false, Count = owned.Count }
 	end
-	if countUnique(data.Cards) >= Config.GetBackpackCapacity(data.BackpackLevel) then
+	if countUnique(data.Cards) >= backpackCapacity(session) then
 		local soldFor = math.floor(tier.SellValue * stats.DupeMult)
 		data.Coins += soldFor
 		data.TotalEarned += soldFor
@@ -1083,13 +1221,16 @@ local function performRoll(player, isAuto)
 	if isAuto and not stats.AutoMulti then
 		count = 1
 	end
+	count *= stats.CardOutputMult -- golden tree card doubler/quadrupler
 
 	local results = {}
 	for _ = 1, count do
-		local card = CardPool.Draw(stats)
-		local outcome = addCardToCollection(data, stats, card)
 		data.TotalRolls += 1
 		data.RollsBalance += 1
+		-- Lucky Sevens: every 7th all-time roll comes from the rare pool
+		local forcePool = stats.LuckySevens and data.TotalRolls % 7 == 0
+		local card = CardPool.Draw(stats, forcePool)
+		local outcome = addCardToCollection(session, card)
 
 		local tier = Config.TierByName[card.Tier]
 		if tier.Index > data.BestTier then
@@ -1143,7 +1284,7 @@ local function onPlayerAdded(player)
 
 	leaderstats.Parent = player
 
-	local stats = Config.ComputeStats(data.Upgrades)
+	local stats = Config.ComputeStats(data.Upgrades, data.RebirthUpgrades)
 	local session = {
 		Data = data,
 		CanSave = loadedSafely,
@@ -1158,9 +1299,9 @@ local function onPlayerAdded(player)
 
 	-- offline earnings
 	if stats.OfflineUnlocked and data.LastSeen > 0 then
-		local away = math.min(os.time() - data.LastSeen, Config.Economy.OfflineCapHours * 3600)
+		local away = math.min(os.time() - data.LastSeen, stats.OfflineCapHours * 3600)
 		if away > 60 then
-			local earned = math.floor(computeRate(data, stats) * away * Config.Economy.OfflineFraction)
+			local earned = math.floor(computeRate(data, stats) * away * stats.OfflineFraction)
 			if earned > 0 then
 				data.Coins += earned
 				data.TotalEarned += earned
@@ -1225,21 +1366,30 @@ local function onBuyUpgrade(player, nodeId)
 	end
 
 	local data = session.Data
-	local level = data.Upgrades[nodeId] or 0
+	-- golden tree nodes cost Rebirth Tokens; purple ones cost coins
+	local levels = if treeNode.IsRebirth then data.RebirthUpgrades else data.Upgrades
+	local level = levels[nodeId] or 0
 	if treeNode.MaxLevel and level >= treeNode.MaxLevel then
 		return
 	end
-	if treeNode.Requires and (data.Upgrades[treeNode.Requires] or 0) < 1 then
+	if treeNode.Requires and (levels[treeNode.Requires] or 0) < 1 then
 		return
 	end
 	local cost = Config.GetNodeCost(treeNode, level)
-	if data.Coins < cost then
-		return
+	if treeNode.IsRebirth then
+		if data.RebirthTokens < cost then
+			return
+		end
+		data.RebirthTokens -= cost
+	else
+		if data.Coins < cost then
+			return
+		end
+		data.Coins -= cost
 	end
 
-	data.Coins -= cost
-	data.Upgrades[nodeId] = level + 1
-	session.Stats = Config.ComputeStats(data.Upgrades)
+	levels[nodeId] = level + 1
+	session.Stats = Config.ComputeStats(data.Upgrades, data.RebirthUpgrades)
 	pushState(player, false)
 end
 
@@ -1369,6 +1519,47 @@ toggleAutoRemote.OnServerEvent:Connect(function(player)
 	end
 	session.Data.AutoOn = not session.Data.AutoOn
 	pushState(player, false)
+end)
+
+-- Rebirth: needs a Legendary+ card and enough coins for at least 1 token.
+-- Wipes coins, the purple tree, and all cards below the keep tier
+-- (Mythic, or Legendary with the Keeper upgrade). Tokens scale with coins.
+rebirthRemote.OnServerEvent:Connect(function(player)
+	local session = sessions[player]
+	if not session then
+		return
+	end
+	local data = session.Data
+	local tokens = Config.GetRebirthTokens(data.Coins)
+	if tokens < 1 or not hasLegendaryPlus(data) then
+		return
+	end
+	tokens += session.Stats.BonusTokens
+
+	local keepIndex = if session.Stats.KeepLegendary
+		then Config.TierByName.Legendary.Index
+		else Config.TierByName[Config.Rebirth.KeepTier].Index
+
+	for key, card in data.Cards do
+		local tier = Config.TierByName[card.Tier]
+		if not tier or tier.Index < keepIndex then
+			data.Cards[key] = nil
+		end
+	end
+	for index = #data.Equipped, 1, -1 do
+		if not data.Cards[data.Equipped[index]] then
+			table.remove(data.Equipped, index)
+		end
+	end
+
+	data.Rebirths += 1
+	data.RebirthTokens += tokens
+	data.Upgrades = {}
+	session.Stats = Config.ComputeStats(data.Upgrades, data.RebirthUpgrades)
+	data.Coins = session.Stats.StartCoins
+
+	announce(("🌟 %s rebirthed and earned %d token%s!"):format(player.Name, tokens, tokens == 1 and "" or "s"))
+	pushState(player, true)
 end)
 
 backpackRemote.OnServerEvent:Connect(function(player)
@@ -1938,18 +2129,26 @@ local function buildTv(folder)
 	return ticker
 end
 
-local function buildPlaza(folder)
-	local ring = Instance.new("Part")
-	ring.Name = "SpawnPlaza"
-	ring.Shape = Enum.PartType.Cylinder
-	ring.Anchored = true
-	ring.CanCollide = false
-	ring.Size = Vector3.new(0.3, 22, 22)
-	ring.CFrame = CFrame.new(0, 0.05, 0) * CFrame.Angles(0, 0, math.rad(90))
-	ring.Color = Color3.fromRGB(150, 90, 255)
-	ring.Material = Enum.Material.Neon
-	ring.Transparency = 0.45
-	ring.Parent = folder
+-- The golden island's altar: walk up and trigger to rebirth (the client
+-- shows a confirm panel first; the prompt itself is handled client-side).
+local function buildAltar(folder)
+	local altar = Instance.new("Part")
+	altar.Name = "RebirthAltar"
+	altar.Anchored = true
+	altar.Size = Vector3.new(12, 1.2, 12)
+	altar.Position = Vector3.new(0, 0.6, -88)
+	altar.Color = Color3.fromRGB(255, 215, 60)
+	altar.Material = Enum.Material.Neon
+	altar.Parent = folder
+
+	local prompt = Instance.new("ProximityPrompt")
+	prompt.Name = "RebirthPrompt"
+	prompt.ActionText = "Rebirth"
+	prompt.ObjectText = "⭐ Rebirth Altar"
+	prompt.HoldDuration = 0.5 -- small hold so nobody triggers it by accident
+	prompt.MaxActivationDistance = 12
+	prompt.RequiresLineOfSight = false
+	prompt.Parent = altar
 end
 
 -- Builds everything. onBuy(player, nodeId) is called when a pad prompt fires.
@@ -1958,8 +2157,6 @@ function TreeBuilder.Build(onBuy)
 	local folder = Instance.new("Folder")
 	folder.Name = "UpgradeTree"
 
-	buildPlaza(folder)
-
 	for _, treeNode in Config.Tree do
 		buildPad(treeNode, folder, onBuy)
 		local parent = treeNode.Requires and Config.NodeById[treeNode.Requires]
@@ -1967,7 +2164,15 @@ function TreeBuilder.Build(onBuy)
 			buildPath(parent, treeNode, folder)
 		end
 	end
+	for _, treeNode in Config.RebirthTree do
+		buildPad(treeNode, folder, onBuy)
+		local parent = treeNode.Requires and Config.NodeById[treeNode.Requires]
+		if parent then
+			buildPath(parent, treeNode, folder)
+		end
+	end
 
+	buildAltar(folder)
 	local ticker = buildTv(folder)
 	folder.Parent = workspace
 	return ticker
@@ -2263,8 +2468,22 @@ function Cards:ShowSplash(rollCards, holdSeconds)
 		end
 	end
 
-	local width = if #rollCards <= 1 then 210 elseif #rollCards <= 3 then 180 else 150
-	for index, card in rollCards do
+	-- giant multi-rolls: show the 5 best cards and summarize the rest
+	local shown = rollCards
+	local hidden = 0
+	if #rollCards > 5 then
+		local sorted = table.clone(rollCards)
+		table.sort(sorted, function(a, b)
+			local ta = Config.TierByName[a.Tier]
+			local tb = Config.TierByName[b.Tier]
+			return (ta and ta.Index or 0) > (tb and tb.Index or 0)
+		end)
+		shown = table.move(sorted, 1, 5, 1, {})
+		hidden = #rollCards - 5
+	end
+
+	local width = if #shown <= 1 then 210 elseif #shown <= 3 then 180 else 150
+	for index, card in shown do
 		local frame = self:BuildCardFrame(card, width, self.CardRow)
 		-- pop-in: each card springs up in sequence
 		local scale = Instance.new("UIScale")
@@ -2275,6 +2494,25 @@ function Cards:ShowSplash(rollCards, holdSeconds)
 			TweenInfo.new(0.35, Enum.EasingStyle.Back, Enum.EasingDirection.Out, 0, false, (index - 1) * 0.08),
 			{ Scale = 1 }
 		):Play()
+	end
+	if hidden > 0 then
+		local more = create("Frame", {
+			BackgroundColor3 = PANEL_COLOR,
+			Size = UDim2.fromOffset(90, math.floor(width * 1.45)),
+			ZIndex = 11,
+			Parent = self.CardRow,
+		})
+		create("UICorner", { CornerRadius = UDim.new(0, 14), Parent = more })
+		create("TextLabel", {
+			BackgroundTransparency = 1,
+			Size = UDim2.new(1, 0, 1, 0),
+			Font = Enum.Font.GothamBlack,
+			TextSize = 20,
+			TextColor3 = DIM_COLOR,
+			Text = ("+%d\nmore"):format(hidden),
+			ZIndex = 12,
+			Parent = more,
+		})
 	end
 
 	self.Overlay.Visible = true
@@ -2415,6 +2653,7 @@ local sellCardRemote = remotes:WaitForChild("SellCard")
 local setAutoSellRemote = remotes:WaitForChild("SetAutoSell")
 local toggleAutoRemote = remotes:WaitForChild("ToggleAuto")
 local backpackRemote = remotes:WaitForChild("UpgradeBackpack")
+local rebirthRemote = remotes:WaitForChild("Rebirth")
 local stateRemote = remotes:WaitForChild("StateChanged")
 local rollResultRemote = remotes:WaitForChild("RollResult")
 local tickerRemote = remotes:WaitForChild("Ticker")
@@ -2460,6 +2699,9 @@ ui = UI.new({
 	end,
 	OnUpgradeBackpack = function()
 		backpackRemote:FireServer()
+	end,
+	OnRebirth = function()
+		rebirthRemote:FireServer()
 	end,
 })
 
@@ -2556,7 +2798,7 @@ function UI:Build()
 	local stats = create("Frame", {
 		AnchorPoint = Vector2.new(0.5, 0),
 		Position = UDim2.new(0.5, 0, 0, 10),
-		Size = UDim2.fromOffset(340, 92),
+		Size = UDim2.fromOffset(340, 112),
 		BackgroundColor3 = COLORS.Panel,
 		BackgroundTransparency = 0.08,
 		Parent = screenGui,
@@ -2594,12 +2836,22 @@ function UI:Build()
 		Text = "Rolls: 0",
 		Parent = stats,
 	})
+	self.TokenLabel = create("TextLabel", {
+		BackgroundTransparency = 1,
+		Position = UDim2.new(0, 0, 0, 84),
+		Size = UDim2.new(1, 0, 0, 20),
+		Font = Enum.Font.GothamBold,
+		TextSize = 13,
+		TextColor3 = COLORS.Gold,
+		Text = "⭐ Tokens: 0  •  Rebirths: 0",
+		Parent = stats,
+	})
 
 	-- ticker (announcements)
 	self.TickerLabel = create("TextLabel", {
 		BackgroundTransparency = 1,
 		AnchorPoint = Vector2.new(0.5, 0),
-		Position = UDim2.new(0.5, 0, 0, 108),
+		Position = UDim2.new(0.5, 0, 0, 128),
 		Size = UDim2.new(0, 500, 0, 22),
 		Font = Enum.Font.GothamBold,
 		TextSize = 16,
@@ -2685,6 +2937,7 @@ function UI:Build()
 
 	self:BuildCollection()
 	self:BuildSettings()
+	self:BuildRebirthModal()
 	task.spawn(function()
 		self:BuildPadSurfaces()
 	end)
@@ -3133,9 +3386,172 @@ function UI:BuildPadSurfaces()
 			CostLabel = costLabel,
 		}
 	end
+
+	-- the rebirth altar: live progress text + client-side confirm
+	local altar = tree:WaitForChild("RebirthAltar", 10)
+	if altar then
+		local gui = create("SurfaceGui", {
+			Adornee = altar,
+			Face = Enum.NormalId.Top,
+			SizingMode = Enum.SurfaceGuiSizingMode.PixelsPerStud,
+			PixelsPerStud = 22,
+			Parent = playerGui,
+		})
+		local bg = create("Frame", {
+			BackgroundTransparency = 1,
+			Size = UDim2.new(1, 0, 1, 0),
+			Rotation = 180, -- approached from the bridge (north)
+			Parent = gui,
+		})
+		create("TextLabel", {
+			BackgroundTransparency = 1,
+			Position = UDim2.new(0, 8, 0, 8),
+			Size = UDim2.new(1, -16, 0, 56),
+			Font = Enum.Font.GothamBlack,
+			TextSize = 34,
+			TextColor3 = Color3.fromRGB(60, 40, 0),
+			Text = "⭐ REBIRTH",
+			Parent = bg,
+		})
+		self.AltarLabel = create("TextLabel", {
+			BackgroundTransparency = 1,
+			Position = UDim2.new(0, 10, 0, 64),
+			Size = UDim2.new(1, -20, 1, -72),
+			Font = Enum.Font.GothamBold,
+			TextSize = 20,
+			TextWrapped = true,
+			TextYAlignment = Enum.TextYAlignment.Top,
+			TextColor3 = Color3.fromRGB(60, 40, 0),
+			Text = "",
+			Parent = bg,
+		})
+		local prompt = altar:FindFirstChild("RebirthPrompt")
+		if prompt and prompt:IsA("ProximityPrompt") then
+			prompt.Triggered:Connect(function()
+				self:OpenRebirthModal()
+			end)
+		end
+	end
+
 	if self.State then
 		self:UpdatePads()
 	end
+end
+
+-- confirm dialog so a rebirth is never a misclick
+function UI:BuildRebirthModal()
+	local overlay = create("TextButton", {
+		BackgroundColor3 = Color3.fromRGB(10, 6, 20),
+		BackgroundTransparency = 0.4,
+		Size = UDim2.new(1, 0, 1, 0),
+		Text = "",
+		AutoButtonColor = false,
+		Visible = false,
+		ZIndex = 20,
+		Parent = self.ScreenGui,
+	})
+	overlay.Activated:Connect(function()
+		overlay.Visible = false
+	end)
+	self.RebirthOverlay = overlay
+
+	local panel = create("Frame", {
+		AnchorPoint = Vector2.new(0.5, 0.5),
+		Position = UDim2.new(0.5, 0, 0.5, 0),
+		Size = UDim2.fromOffset(360, 250),
+		BackgroundColor3 = COLORS.Panel,
+		ZIndex = 21,
+		Parent = overlay,
+	})
+	addCorner(panel, UDim.new(0, 18))
+	create("UIStroke", { Color = COLORS.Gold, Thickness = 3, Parent = panel })
+
+	create("TextLabel", {
+		BackgroundTransparency = 1,
+		Position = UDim2.new(0, 0, 0, 12),
+		Size = UDim2.new(1, 0, 0, 30),
+		Font = Enum.Font.GothamBlack,
+		TextSize = 24,
+		TextColor3 = COLORS.Gold,
+		Text = "⭐ REBIRTH?",
+		ZIndex = 21,
+		Parent = panel,
+	})
+	self.RebirthModalBody = create("TextLabel", {
+		BackgroundTransparency = 1,
+		Position = UDim2.new(0, 20, 0, 48),
+		Size = UDim2.new(1, -40, 0, 130),
+		Font = Enum.Font.GothamMedium,
+		TextSize = 14,
+		TextWrapped = true,
+		TextYAlignment = Enum.TextYAlignment.Top,
+		TextColor3 = COLORS.Text,
+		Text = "",
+		ZIndex = 21,
+		Parent = panel,
+	})
+	self.RebirthConfirmButton = create("TextButton", {
+		Position = UDim2.new(0, 20, 1, -58),
+		Size = UDim2.new(0.5, -30, 0, 44),
+		BackgroundColor3 = COLORS.Gold,
+		Font = Enum.Font.GothamBlack,
+		TextSize = 17,
+		TextColor3 = Color3.fromRGB(60, 40, 0),
+		Text = "REBIRTH",
+		ZIndex = 21,
+		Parent = panel,
+	})
+	addCorner(self.RebirthConfirmButton, UDim.new(0, 12))
+	self.RebirthConfirmButton.Activated:Connect(function()
+		overlay.Visible = false
+		self.Callbacks.OnRebirth()
+	end)
+
+	local cancel = create("TextButton", {
+		AnchorPoint = Vector2.new(1, 0),
+		Position = UDim2.new(1, -20, 1, -58),
+		Size = UDim2.new(0.5, -30, 0, 44),
+		BackgroundColor3 = COLORS.Disabled,
+		Font = Enum.Font.GothamBold,
+		TextSize = 15,
+		TextColor3 = COLORS.Text,
+		Text = "Cancel",
+		ZIndex = 21,
+		Parent = panel,
+	})
+	addCorner(cancel, UDim.new(0, 12))
+	cancel.Activated:Connect(function()
+		overlay.Visible = false
+	end)
+end
+
+function UI:OpenRebirthModal()
+	if not self.State then
+		return
+	end
+	self:RefreshRebirthModal()
+	self.RebirthOverlay.Visible = true
+end
+
+function UI:RefreshRebirthModal()
+	local state = self.State
+	local r = state.Rebirth
+	local ready = r.HasLegendary and r.TokensIfNow >= 1
+	local total = r.TokensIfNow + (r.TokensIfNow >= 1 and r.BonusTokens or 0)
+
+	local lines = {
+		("You will gain:  ⭐ %d token%s"):format(total, total == 1 and "" or "s"),
+		"",
+		("KEPT:  %s+ cards, golden tree, backpack, rolls"):format(r.KeepTier),
+		("WIPED:  coins, purple upgrades, all cards below %s"):format(r.KeepTier),
+		"",
+		r.HasLegendary and "✓ Legendary+ card owned" or "✗ You need a Legendary+ card",
+		r.TokensIfNow >= 1 and ("✓ %s coins banked"):format(Format(state.Coins))
+			or ("✗ Need %s coins (you have %s)"):format(Format(Config.Rebirth.BaseCoins), Format(state.Coins)),
+	}
+	self.RebirthModalBody.Text = table.concat(lines, "\n")
+	self.RebirthConfirmButton.BackgroundColor3 = if ready then COLORS.Gold else COLORS.Disabled
+	self.RebirthConfirmButton.AutoButtonColor = ready
 end
 
 local function setPadVisible(entry, visible)
@@ -3157,18 +3573,19 @@ function UI:UpdatePads()
 	local state = self.State
 	for nodeId, entry in self.Pads do
 		local treeNode = Config.NodeById[nodeId]
-		local level = state.Upgrades[nodeId] or 0
-		local unlocked = not treeNode.Requires or (state.Upgrades[treeNode.Requires] or 0) >= 1
+		local levels = if treeNode.IsRebirth then state.RebirthUpgrades else state.Upgrades
+		local level = levels[nodeId] or 0
+		local unlocked = not treeNode.Requires or (levels[treeNode.Requires] or 0) >= 1
 
 		setPadVisible(entry, unlocked)
 		if not unlocked then
 			continue
 		end
 
-		-- pads you own glow warm gold (local-only color change)
+		-- pads you own glow warm white (local-only color change)
 		if entry.Trim then
 			entry.Trim.Color = if level >= 1
-				then Color3.fromRGB(255, 240, 160)
+				then Color3.fromRGB(255, 250, 220)
 				else (Config.BranchColors[treeNode.Branch] or Color3.fromRGB(200, 200, 200))
 		end
 
@@ -3181,10 +3598,30 @@ function UI:UpdatePads()
 		else
 			local cost = Config.GetNodeCost(treeNode, level)
 			local prefix = if treeNode.MaxLevel == nil then ("Lv %d\n"):format(level) else ""
-			entry.CostLabel.Text = prefix .. "🪙 " .. Format(cost)
-			entry.CostLabel.TextColor3 = if state.Coins >= cost
+			local icon = if treeNode.IsRebirth then "⭐" else "🪙"
+			local wallet = if treeNode.IsRebirth then state.RebirthTokens else state.Coins
+			entry.CostLabel.Text = prefix .. icon .. " " .. Format(cost)
+			entry.CostLabel.TextColor3 = if wallet >= cost
 				then Color3.fromRGB(10, 60, 25)
 				else Color3.fromRGB(120, 20, 30)
+		end
+	end
+
+	-- altar progress text
+	if self.AltarLabel then
+		local r = state.Rebirth
+		if r.HasLegendary and r.TokensIfNow >= 1 then
+			local total = r.TokensIfNow + r.BonusTokens
+			self.AltarLabel.Text = ("READY!  Hold E for ⭐ %d token%s\nNext token at 🪙 %s")
+				:format(total, total == 1 and "" or "s", Format(r.NextAt))
+		else
+			self.AltarLabel.Text = ("%s Legendary+ card\n%s 🪙 %s / %s")
+				:format(
+					r.HasLegendary and "✓" or "✗",
+					r.TokensIfNow >= 1 and "✓" or "✗",
+					Format(state.Coins),
+					Format(Config.Rebirth.BaseCoins)
+				)
 		end
 	end
 end
@@ -3248,8 +3685,15 @@ function UI:Update(state)
 		bestTier and ("  •  Best: " .. bestTier.Name) or ""
 	)
 
-	self.MultiBadge.Visible = state.Stats.MultiRoll > 1
-	self.MultiBadge.Text = "x" .. state.Stats.MultiRoll
+	self.TokenLabel.Text = ("⭐ Tokens: %s  •  Rebirths: %s"):format(Format(state.RebirthTokens), Format(state.Rebirths))
+
+	local cardsPerRoll = state.Stats.MultiRoll * state.Stats.CardOutputMult
+	self.MultiBadge.Visible = cardsPerRoll > 1
+	self.MultiBadge.Text = "x" .. cardsPerRoll
+
+	if self.RebirthOverlay and self.RebirthOverlay.Visible then
+		self:RefreshRebirthModal()
+	end
 
 	self.AutoButton.Visible = state.Stats.AutoUnlocked
 	self.AutoButton.Text = state.AutoOn and "AUTO: ON" or "AUTO: OFF"
@@ -3296,26 +3740,69 @@ return UI
     </Properties>
     <Item class="Part" referent="22">
       <Properties>
-        <string name="Name">Baseplate</string>
+        <string name="Name">GoldenIsland</string>
         <bool name="Anchored">true</bool>
         <token name="BottomSurface">0</token>
-        <Color3uint8 name="Color3uint8">2169904</Color3uint8>
+        <Color3uint8 name="Color3uint8">15910720</Color3uint8>
         <bool name="Locked">true</bool>
-        <token name="Material">800</token>
+        <token name="Material">256</token>
         <Vector3 name="Position">
           <X>0</X>
-          <Y>-8</Y>
-          <Z>0</Z>
+          <Y>-4</Y>
+          <Z>-123</Z>
         </Vector3>
         <Vector3 name="size">
-          <X>512</X>
-          <Y>16</Y>
-          <Z>512</Z>
+          <X>130</X>
+          <Y>8</Y>
+          <Z>100</Z>
         </Vector3>
-        <token name="TopSurface">0</token>
+        <token name="TopSurface">3</token>
       </Properties>
     </Item>
-    <Item class="SpawnLocation" referent="23">
+    <Item class="Part" referent="23">
+      <Properties>
+        <string name="Name">MainIsland</string>
+        <bool name="Anchored">true</bool>
+        <token name="BottomSurface">0</token>
+        <Color3uint8 name="Color3uint8">11904731</Color3uint8>
+        <bool name="Locked">true</bool>
+        <token name="Material">256</token>
+        <Vector3 name="Position">
+          <X>0</X>
+          <Y>-4</Y>
+          <Z>5</Z>
+        </Vector3>
+        <Vector3 name="size">
+          <X>164</X>
+          <Y>8</Y>
+          <Z>144</Z>
+        </Vector3>
+        <token name="TopSurface">3</token>
+      </Properties>
+    </Item>
+    <Item class="Part" referent="24">
+      <Properties>
+        <string name="Name">RebirthBridge</string>
+        <bool name="Anchored">true</bool>
+        <token name="BottomSurface">0</token>
+        <Color3uint8 name="Color3uint8">16766553</Color3uint8>
+        <bool name="Locked">true</bool>
+        <token name="Material">288</token>
+        <Vector3 name="Position">
+          <X>0</X>
+          <Y>-0.5</Y>
+          <Z>-69</Z>
+        </Vector3>
+        <Vector3 name="size">
+          <X>10</X>
+          <Y>1</Y>
+          <Z>16</Z>
+        </Vector3>
+        <token name="TopSurface">0</token>
+        <float name="Transparency">0.15</float>
+      </Properties>
+    </Item>
+    <Item class="SpawnLocation" referent="25">
       <Properties>
         <string name="Name">SpawnLocation</string>
         <bool name="Anchored">true</bool>

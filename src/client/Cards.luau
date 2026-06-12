@@ -267,8 +267,22 @@ function Cards:ShowSplash(rollCards, holdSeconds)
 		end
 	end
 
-	local width = if #rollCards <= 1 then 210 elseif #rollCards <= 3 then 180 else 150
-	for index, card in rollCards do
+	-- giant multi-rolls: show the 5 best cards and summarize the rest
+	local shown = rollCards
+	local hidden = 0
+	if #rollCards > 5 then
+		local sorted = table.clone(rollCards)
+		table.sort(sorted, function(a, b)
+			local ta = Config.TierByName[a.Tier]
+			local tb = Config.TierByName[b.Tier]
+			return (ta and ta.Index or 0) > (tb and tb.Index or 0)
+		end)
+		shown = table.move(sorted, 1, 5, 1, {})
+		hidden = #rollCards - 5
+	end
+
+	local width = if #shown <= 1 then 210 elseif #shown <= 3 then 180 else 150
+	for index, card in shown do
 		local frame = self:BuildCardFrame(card, width, self.CardRow)
 		-- pop-in: each card springs up in sequence
 		local scale = Instance.new("UIScale")
@@ -279,6 +293,25 @@ function Cards:ShowSplash(rollCards, holdSeconds)
 			TweenInfo.new(0.35, Enum.EasingStyle.Back, Enum.EasingDirection.Out, 0, false, (index - 1) * 0.08),
 			{ Scale = 1 }
 		):Play()
+	end
+	if hidden > 0 then
+		local more = create("Frame", {
+			BackgroundColor3 = PANEL_COLOR,
+			Size = UDim2.fromOffset(90, math.floor(width * 1.45)),
+			ZIndex = 11,
+			Parent = self.CardRow,
+		})
+		create("UICorner", { CornerRadius = UDim.new(0, 14), Parent = more })
+		create("TextLabel", {
+			BackgroundTransparency = 1,
+			Size = UDim2.new(1, 0, 1, 0),
+			Font = Enum.Font.GothamBlack,
+			TextSize = 20,
+			TextColor3 = DIM_COLOR,
+			Text = ("+%d\nmore"):format(hidden),
+			ZIndex = 12,
+			Parent = more,
+		})
 	end
 
 	self.Overlay.Visible = true

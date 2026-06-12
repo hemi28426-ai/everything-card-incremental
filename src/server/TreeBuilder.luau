@@ -157,18 +157,26 @@ local function buildTv(folder)
 	return ticker
 end
 
-local function buildPlaza(folder)
-	local ring = Instance.new("Part")
-	ring.Name = "SpawnPlaza"
-	ring.Shape = Enum.PartType.Cylinder
-	ring.Anchored = true
-	ring.CanCollide = false
-	ring.Size = Vector3.new(0.3, 22, 22)
-	ring.CFrame = CFrame.new(0, 0.05, 0) * CFrame.Angles(0, 0, math.rad(90))
-	ring.Color = Color3.fromRGB(150, 90, 255)
-	ring.Material = Enum.Material.Neon
-	ring.Transparency = 0.45
-	ring.Parent = folder
+-- The golden island's altar: walk up and trigger to rebirth (the client
+-- shows a confirm panel first; the prompt itself is handled client-side).
+local function buildAltar(folder)
+	local altar = Instance.new("Part")
+	altar.Name = "RebirthAltar"
+	altar.Anchored = true
+	altar.Size = Vector3.new(12, 1.2, 12)
+	altar.Position = Vector3.new(0, 0.6, -88)
+	altar.Color = Color3.fromRGB(255, 215, 60)
+	altar.Material = Enum.Material.Neon
+	altar.Parent = folder
+
+	local prompt = Instance.new("ProximityPrompt")
+	prompt.Name = "RebirthPrompt"
+	prompt.ActionText = "Rebirth"
+	prompt.ObjectText = "⭐ Rebirth Altar"
+	prompt.HoldDuration = 0.5 -- small hold so nobody triggers it by accident
+	prompt.MaxActivationDistance = 12
+	prompt.RequiresLineOfSight = false
+	prompt.Parent = altar
 end
 
 -- Builds everything. onBuy(player, nodeId) is called when a pad prompt fires.
@@ -177,8 +185,6 @@ function TreeBuilder.Build(onBuy)
 	local folder = Instance.new("Folder")
 	folder.Name = "UpgradeTree"
 
-	buildPlaza(folder)
-
 	for _, treeNode in Config.Tree do
 		buildPad(treeNode, folder, onBuy)
 		local parent = treeNode.Requires and Config.NodeById[treeNode.Requires]
@@ -186,7 +192,15 @@ function TreeBuilder.Build(onBuy)
 			buildPath(parent, treeNode, folder)
 		end
 	end
+	for _, treeNode in Config.RebirthTree do
+		buildPad(treeNode, folder, onBuy)
+		local parent = treeNode.Requires and Config.NodeById[treeNode.Requires]
+		if parent then
+			buildPath(parent, treeNode, folder)
+		end
+	end
 
+	buildAltar(folder)
 	local ticker = buildTv(folder)
 	folder.Parent = workspace
 	return ticker

@@ -24,15 +24,42 @@
     },
 
     "Workspace": {
-      "Baseplate": {
+      "MainIsland": {
         "$className": "Part",
         "$properties": {
           "Anchored": true,
           "Locked": true,
-          "Size": [512, 16, 512],
-          "Position": [0, -8, 0],
-          "Color": [0.13, 0.11, 0.19],
-          "Material": "Slate",
+          "Size": [164, 8, 144],
+          "Position": [0, -4, 5],
+          "Color": [0.71, 0.65, 0.86],
+          "Material": "Plastic",
+          "TopSurface": "Studs",
+          "BottomSurface": "Smooth"
+        }
+      },
+      "GoldenIsland": {
+        "$className": "Part",
+        "$properties": {
+          "Anchored": true,
+          "Locked": true,
+          "Size": [130, 8, 100],
+          "Position": [0, -4, -123],
+          "Color": [0.95, 0.78, 0.25],
+          "Material": "Plastic",
+          "TopSurface": "Studs",
+          "BottomSurface": "Smooth"
+        }
+      },
+      "RebirthBridge": {
+        "$className": "Part",
+        "$properties": {
+          "Anchored": true,
+          "Locked": true,
+          "Size": [10, 1, 16],
+          "Position": [0, -0.5, -69],
+          "Color": [1, 0.84, 0.35],
+          "Material": "Neon",
+          "Transparency": 0.15,
           "TopSurface": "Smooth",
           "BottomSurface": "Smooth"
         }

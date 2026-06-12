@@ -39,7 +39,7 @@ Config.Roll = {
 	BaseAutoCooldown = 6.0,
 	MinAutoCooldown = 0.5,
 	BaseLuckChance = 0.02, -- chance a roll draws from the discovered rare pool
-	MaxLuckChance = 0.6,
+	MaxLuckChance = 0.75,
 	BaseGodChance = 1 / 5000, -- chance a roll hits the legends list
 	BaseFreshInterval = 4.0, -- seconds between background account scans
 	MaxUserId = 8_500_000_000, -- rough top of the current id space
@@ -77,6 +77,29 @@ end
 
 function Config.GetBackpackCost(level)
 	return math.floor(Config.Backpack.BaseCost * Config.Backpack.CostMult ^ level)
+end
+
+-- ===== Rebirth =============================================================
+-- Rebirth needs a Legendary+ card and at least BaseCoins banked. Tokens
+-- earned scale with how much you banked: 20K = 1, 160K = 2, 1.28M = 3...
+-- Rebirthing wipes coins, the purple tree, and every card below Mythic
+-- (Legendaries included). Mythic+, backpack, rolls, and the golden tree stay.
+Config.Rebirth = {
+	BaseCoins = 20000,
+	CoinsMult = 8,
+	KeepTier = "Mythic", -- cards at/above this survive (Legendary Keeper lowers it)
+}
+
+function Config.GetRebirthTokens(coins)
+	if coins < Config.Rebirth.BaseCoins then
+		return 0
+	end
+	return math.floor(math.log(coins / Config.Rebirth.BaseCoins) / math.log(Config.Rebirth.CoinsMult) + 1e-9) + 1
+end
+
+-- coins needed to earn one more token than `tokens`
+function Config.GetCoinsForTokens(tokens)
+	return math.floor(Config.Rebirth.BaseCoins * Config.Rebirth.CoinsMult ^ math.max(tokens, 0))
 end
 
 Config.AutosaveInterval = 60
@@ -139,10 +162,51 @@ node({ Id = "infhaste", Name = "∞ Roll Haste", Desc = "x0.97 roll cooldown, fo
 node({ Id = "infauto", Name = "∞ Auto Efficiency", Desc = "x0.97 auto cooldown, forever", Branch = "Endgame", Pos = { 21, -48 }, Cost = 750000, CostMult = 1.7, MaxLevel = nil, Effect = "InfAuto", Value = 0.97 })
 
 Config.Tree = T
+
+-- ===== Golden (rebirth) tree ===============================================
+-- Bought with Rebirth Tokens on the golden island. Deliberately overpowered.
+-- IsRebirth marks them; levels live in data.RebirthUpgrades and survive
+-- every rebirth.
+local R = {}
+local function rnode(def)
+	def.IsRebirth = true
+	def.Branch = "Rebirth"
+	table.insert(R, def)
+end
+
+-- row 1 (z -104)
+rnode({ Id = "carddouble", Name = "Card Doubler", Desc = "2x cards from every roll", Pos = { -45, -104 }, Cost = 3 })
+rnode({ Id = "goldinc", Name = "Golden Income", Desc = "x3 ALL coin earnings, forever", Pos = { -15, -104 }, Cost = 2, CostMult = 1.7, MaxLevel = nil })
+rnode({ Id = "eternalluck", Name = "Eternal Luck", Desc = "+10% rare pool chance, forever", Pos = { 15, -104 }, Cost = 2, CostMult = 1.8, MaxLevel = nil })
+rnode({ Id = "quickstart", Name = "Quick Start", Desc = "+10K starting coins after rebirth", Pos = { 45, -104 }, Cost = 1, CostMult = 2, MaxLevel = nil })
+-- row 2 (z -120)
+rnode({ Id = "cardquad", Name = "Card Quadrupler", Desc = "2x cards AGAIN (4x total)", Pos = { -45, -120 }, Cost = 8, Requires = "carddouble" })
+rnode({ Id = "timelord", Name = "Time Lord", Desc = "Roll cooldown x0.6", Pos = { -15, -120 }, Cost = 4 })
+rnode({ Id = "bigbag", Name = "Bottomless Bag", Desc = "+30 backpack capacity", Pos = { 15, -120 }, Cost = 2, CostMult = 1.6, MaxLevel = nil })
+rnode({ Id = "dupegold", Name = "Dupe Tycoon", Desc = "+100% dupe & sell value", Pos = { 45, -120 }, Cost = 2, CostMult = 1.7, MaxLevel = nil })
+-- row 3 (z -136)
+rnode({ Id = "overdrive", Name = "Scanner Overdrive", Desc = "Fresh accounts found 2x faster", Pos = { -45, -136 }, Cost = 3 })
+rnode({ Id = "chrono", Name = "Chrono Master", Desc = "Auto-roll cooldown x0.6", Pos = { -15, -136 }, Cost = 4, Requires = "timelord" })
+rnode({ Id = "slotmaster", Name = "Slot Master", Desc = "+1 equip slot", Pos = { 15, -136 }, Cost = 4, CostMult = 1.8, MaxLevel = nil })
+rnode({ Id = "luckyseven", Name = "Lucky Sevens", Desc = "Every 7th roll is Rare or better", Pos = { 45, -136 }, Cost = 6 })
+-- row 4 (z -152)
+rnode({ Id = "tokenhoard", Name = "Token Hoarder", Desc = "+1 token from every rebirth", Pos = { -45, -152 }, Cost = 12, MaxLevel = 2, CostMult = 1 })
+rnode({ Id = "keeper", Name = "Legendary Keeper", Desc = "Legendary cards survive rebirth", Pos = { -15, -152 }, Cost = 10 })
+rnode({ Id = "godmagnet", Name = "God Magnet", Desc = "3x chance to roll a legend", Pos = { 15, -152 }, Cost = 5 })
+rnode({ Id = "dreamprofit", Name = "Dream Profits", Desc = "Offline earnings: full rate, 24h cap", Pos = { 45, -152 }, Cost = 5 })
+
+Config.RebirthTree = R
+
 Config.NodeById = {}
 for _, treeNode in Config.Tree do
 	if treeNode.MaxLevel == nil and treeNode.CostMult == nil then
 		treeNode.MaxLevel = 1 -- plain nodes are one-time purchases
+	end
+	Config.NodeById[treeNode.Id] = treeNode
+end
+for _, treeNode in Config.RebirthTree do
+	if treeNode.MaxLevel == nil and treeNode.CostMult == nil then
+		treeNode.MaxLevel = 1
 	end
 	Config.NodeById[treeNode.Id] = treeNode
 end
@@ -152,17 +216,20 @@ Config.BranchColors = {
 	Luck = Color3.fromRGB(90, 210, 120),
 	Economy = Color3.fromRGB(255, 190, 60),
 	Endgame = Color3.fromRGB(230, 60, 200),
+	Rebirth = Color3.fromRGB(255, 215, 60),
 }
 
 function Config.GetNodeCost(treeNode, level)
 	return math.floor(treeNode.Cost * (treeNode.CostMult or 1) ^ level)
 end
 
--- Turns a player's owned upgrade levels into their effective stats.
-function Config.ComputeStats(upgrades)
+-- Turns a player's owned upgrade levels (both trees) into effective stats.
+function Config.ComputeStats(upgrades, rebirthUpgrades)
+	rebirthUpgrades = rebirthUpgrades or {}
 	local stats = {
 		RollCooldown = Config.Roll.BaseCooldown,
 		MultiRoll = 1,
+		CardOutputMult = 1, -- golden tree: multiplies cards per roll
 		AutoUnlocked = false,
 		AutoCooldown = Config.Roll.BaseAutoCooldown,
 		AutoMulti = false,
@@ -172,7 +239,14 @@ function Config.ComputeStats(upgrades)
 		CoinMult = 1,
 		EquipSlots = Config.Economy.BaseEquipSlots,
 		DupeMult = 1,
+		BackpackBonus = 0,
 		OfflineUnlocked = false,
+		OfflineFraction = Config.Economy.OfflineFraction,
+		OfflineCapHours = Config.Economy.OfflineCapHours,
+		StartCoins = 0,
+		BonusTokens = 0,
+		KeepLegendary = false,
+		LuckySevens = false,
 	}
 	for _, treeNode in Config.Tree do
 		local level = upgrades[treeNode.Id] or 0
@@ -213,6 +287,38 @@ function Config.ComputeStats(upgrades)
 			end
 		end
 	end
+	-- golden tree effects (levels survive rebirth)
+	local function rLevel(id)
+		return rebirthUpgrades[id] or 0
+	end
+	stats.CardOutputMult = 2 ^ (math.min(rLevel("carddouble"), 1) + math.min(rLevel("cardquad"), 1))
+	stats.CoinMult *= 3 ^ rLevel("goldinc")
+	stats.LuckChance += 0.10 * rLevel("eternalluck")
+	stats.StartCoins = 10000 * rLevel("quickstart")
+	if rLevel("timelord") > 0 then
+		stats.RollCooldown *= 0.6
+	end
+	stats.BackpackBonus += 30 * rLevel("bigbag")
+	stats.DupeMult += 1 * rLevel("dupegold")
+	if rLevel("overdrive") > 0 then
+		stats.FreshInterval *= 0.5
+	end
+	if rLevel("chrono") > 0 then
+		stats.AutoCooldown *= 0.6
+	end
+	stats.EquipSlots += rLevel("slotmaster")
+	stats.LuckySevens = rLevel("luckyseven") > 0
+	stats.BonusTokens = rLevel("tokenhoard")
+	stats.KeepLegendary = rLevel("keeper") > 0
+	if rLevel("godmagnet") > 0 then
+		stats.GodChance *= 3
+	end
+	if rLevel("dreamprofit") > 0 then
+		stats.OfflineUnlocked = true
+		stats.OfflineFraction = 1
+		stats.OfflineCapHours = 24
+	end
+
 	stats.RollCooldown = math.max(stats.RollCooldown, Config.Roll.MinCooldown)
 	stats.AutoCooldown = math.max(stats.AutoCooldown, Config.Roll.MinAutoCooldown)
 	stats.LuckChance = math.min(stats.LuckChance, Config.Roll.MaxLuckChance)

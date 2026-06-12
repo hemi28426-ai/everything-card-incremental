@@ -36,6 +36,7 @@ local sellCardRemote = makeRemote("SellCard")
 local setAutoSellRemote = makeRemote("SetAutoSell")
 local toggleAutoRemote = makeRemote("ToggleAuto")
 local backpackRemote = makeRemote("UpgradeBackpack")
+local rebirthRemote = makeRemote("Rebirth")
 local stateRemote = makeRemote("StateChanged")
 local rollResultRemote = makeRemote("RollResult")
 local tickerRemote = makeRemote("Ticker")
@@ -66,24 +67,50 @@ local function countUnique(cards)
 	return count
 end
 
+local function hasLegendaryPlus(data)
+	local needed = Config.TierByName.Legendary.Index
+	for _, card in data.Cards do
+		local tier = Config.TierByName[card.Tier]
+		if tier and tier.Index >= needed then
+			return true
+		end
+	end
+	return false
+end
+
+local function backpackCapacity(session)
+	return Config.GetBackpackCapacity(session.Data.BackpackLevel) + session.Stats.BackpackBonus
+end
+
 local function buildState(session, includeCards)
 	local data = session.Data
+	local tokensIfNow = Config.GetRebirthTokens(data.Coins)
 	local state = {
 		Coins = data.Coins,
 		TotalEarned = data.TotalEarned,
 		TotalRolls = data.TotalRolls,
 		RollsBalance = data.RollsBalance,
 		BackpackLevel = data.BackpackLevel,
-		BackpackCapacity = Config.GetBackpackCapacity(data.BackpackLevel),
+		BackpackCapacity = backpackCapacity(session),
 		BackpackCost = Config.GetBackpackCost(data.BackpackLevel),
 		CardCount = countUnique(data.Cards),
 		AutoSell = data.AutoSell,
 		BestTier = data.BestTier,
 		Upgrades = data.Upgrades,
+		RebirthUpgrades = data.RebirthUpgrades,
 		Equipped = data.Equipped,
 		AutoOn = data.AutoOn,
 		Stats = session.Stats,
 		CoinsPerSec = computeRate(data, session.Stats),
+		Rebirths = data.Rebirths,
+		RebirthTokens = data.RebirthTokens,
+		Rebirth = {
+			HasLegendary = hasLegendaryPlus(data),
+			TokensIfNow = tokensIfNow,
+			BonusTokens = session.Stats.BonusTokens,
+			NextAt = Config.GetCoinsForTokens(tokensIfNow),
+			KeepTier = if session.Stats.KeepLegendary then "Legendary" else Config.Rebirth.KeepTier,
+		},
 	}
 	if includeCards then
 		state.Cards = data.Cards
@@ -113,7 +140,8 @@ end
 -- Adds a rolled card to the collection. Auto-sell settings convert the pull
 -- straight to coins; dupes stack for free; a NEW unique card when the
 -- backpack is full gets auto-sold too.
-local function addCardToCollection(data, stats, card)
+local function addCardToCollection(session, card)
+	local data, stats = session.Data, session.Stats
 	local tier = Config.TierByName[card.Tier]
 	if data.AutoSell[card.Tier] then
 		local soldFor = math.floor(tier.SellValue * stats.DupeMult)
@@ -127,7 +155,7 @@ local function addCardToCollection(data, stats, card)
 		owned.Count += 1
 		return { IsNew = false, Count = owned.Count }
 	end
-	if countUnique(data.Cards) >= Config.GetBackpackCapacity(data.BackpackLevel) then
+	if countUnique(data.Cards) >= backpackCapacity(session) then
 		local soldFor = math.floor(tier.SellValue * stats.DupeMult)
 		data.Coins += soldFor
 		data.TotalEarned += soldFor
@@ -175,13 +203,16 @@ local function performRoll(player, isAuto)
 	if isAuto and not stats.AutoMulti then
 		count = 1
 	end
+	count *= stats.CardOutputMult -- golden tree card doubler/quadrupler
 
 	local results = {}
 	for _ = 1, count do
-		local card = CardPool.Draw(stats)
-		local outcome = addCardToCollection(data, stats, card)
 		data.TotalRolls += 1
 		data.RollsBalance += 1
+		-- Lucky Sevens: every 7th all-time roll comes from the rare pool
+		local forcePool = stats.LuckySevens and data.TotalRolls % 7 == 0
+		local card = CardPool.Draw(stats, forcePool)
+		local outcome = addCardToCollection(session, card)
 
 		local tier = Config.TierByName[card.Tier]
 		if tier.Index > data.BestTier then
@@ -235,7 +266,7 @@ local function onPlayerAdded(player)
 
 	leaderstats.Parent = player
 
-	local stats = Config.ComputeStats(data.Upgrades)
+	local stats = Config.ComputeStats(data.Upgrades, data.RebirthUpgrades)
 	local session = {
 		Data = data,
 		CanSave = loadedSafely,
@@ -250,9 +281,9 @@ local function onPlayerAdded(player)
 
 	-- offline earnings
 	if stats.OfflineUnlocked and data.LastSeen > 0 then
-		local away = math.min(os.time() - data.LastSeen, Config.Economy.OfflineCapHours * 3600)
+		local away = math.min(os.time() - data.LastSeen, stats.OfflineCapHours * 3600)
 		if away > 60 then
-			local earned = math.floor(computeRate(data, stats) * away * Config.Economy.OfflineFraction)
+			local earned = math.floor(computeRate(data, stats) * away * stats.OfflineFraction)
 			if earned > 0 then
 				data.Coins += earned
 				data.TotalEarned += earned
@@ -317,21 +348,30 @@ local function onBuyUpgrade(player, nodeId)
 	end
 
 	local data = session.Data
-	local level = data.Upgrades[nodeId] or 0
+	-- golden tree nodes cost Rebirth Tokens; purple ones cost coins
+	local levels = if treeNode.IsRebirth then data.RebirthUpgrades else data.Upgrades
+	local level = levels[nodeId] or 0
 	if treeNode.MaxLevel and level >= treeNode.MaxLevel then
 		return
 	end
-	if treeNode.Requires and (data.Upgrades[treeNode.Requires] or 0) < 1 then
+	if treeNode.Requires and (levels[treeNode.Requires] or 0) < 1 then
 		return
 	end
 	local cost = Config.GetNodeCost(treeNode, level)
-	if data.Coins < cost then
-		return
+	if treeNode.IsRebirth then
+		if data.RebirthTokens < cost then
+			return
+		end
+		data.RebirthTokens -= cost
+	else
+		if data.Coins < cost then
+			return
+		end
+		data.Coins -= cost
 	end
 
-	data.Coins -= cost
-	data.Upgrades[nodeId] = level + 1
-	session.Stats = Config.ComputeStats(data.Upgrades)
+	levels[nodeId] = level + 1
+	session.Stats = Config.ComputeStats(data.Upgrades, data.RebirthUpgrades)
 	pushState(player, false)
 end
 
@@ -461,6 +501,47 @@ toggleAutoRemote.OnServerEvent:Connect(function(player)
 	end
 	session.Data.AutoOn = not session.Data.AutoOn
 	pushState(player, false)
+end)
+
+-- Rebirth: needs a Legendary+ card and enough coins for at least 1 token.
+-- Wipes coins, the purple tree, and all cards below the keep tier
+-- (Mythic, or Legendary with the Keeper upgrade). Tokens scale with coins.
+rebirthRemote.OnServerEvent:Connect(function(player)
+	local session = sessions[player]
+	if not session then
+		return
+	end
+	local data = session.Data
+	local tokens = Config.GetRebirthTokens(data.Coins)
+	if tokens < 1 or not hasLegendaryPlus(data) then
+		return
+	end
+	tokens += session.Stats.BonusTokens
+
+	local keepIndex = if session.Stats.KeepLegendary
+		then Config.TierByName.Legendary.Index
+		else Config.TierByName[Config.Rebirth.KeepTier].Index
+
+	for key, card in data.Cards do
+		local tier = Config.TierByName[card.Tier]
+		if not tier or tier.Index < keepIndex then
+			data.Cards[key] = nil
+		end
+	end
+	for index = #data.Equipped, 1, -1 do
+		if not data.Cards[data.Equipped[index]] then
+			table.remove(data.Equipped, index)
+		end
+	end
+
+	data.Rebirths += 1
+	data.RebirthTokens += tokens
+	data.Upgrades = {}
+	session.Stats = Config.ComputeStats(data.Upgrades, data.RebirthUpgrades)
+	data.Coins = session.Stats.StartCoins
+
+	announce(("🌟 %s rebirthed and earned %d token%s!"):format(player.Name, tokens, tokens == 1 and "" or "s"))
+	pushState(player, true)
 end)
 
 backpackRemote.OnServerEvent:Connect(function(player)

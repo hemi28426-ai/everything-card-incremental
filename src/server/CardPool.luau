@@ -301,13 +301,14 @@ local function anyCachedCard()
 	return nil
 end
 
--- Draw one card for a roll. Never fails.
-function CardPool.Draw(stats)
+-- Draw one card for a roll. Never fails. forcePool (Lucky Sevens) makes the
+-- roll come from the discovered Rare+ pool when it has anything in it.
+function CardPool.Draw(stats, forcePool)
 	if #legendCards > 0 and math.random() < stats.GodChance then
 		return legendCards[math.random(1, #legendCards)]
 	end
 
-	if math.random() < stats.LuckChance then
+	if forcePool or math.random() < stats.LuckChance then
 		local poolCard = drawFromRarePool()
 		if poolCard then
 			return poolCard
