@@ -62,7 +62,7 @@ Config.Roll = {
 	BaseGodChance = 1 / 5000, -- chance a roll hits the legends list
 	BaseFreshInterval = 4.0, -- seconds between background account scans
 	MaxUserId = 8_500_000_000, -- rough top of the current id space
-	BufferTarget = 12, -- scanned cards kept ready per server
+	BufferTarget = 24, -- scanned cards kept ready per server
 }
 
 -- Random ids are sampled from these ranges (older accounts are rarer rolls).
@@ -80,6 +80,23 @@ Config.Economy = {
 	OfflineCapHours = 8,
 	OfflineFraction = 0.5, -- offline earnings run at half speed
 }
+
+-- The backpack caps how many UNIQUE cards you can hold (dupes stack free).
+-- Upgrades are bought with ROLLS, not coins, and cost 45% more each time.
+Config.Backpack = {
+	BaseCapacity = 20,
+	CapacityPerUpgrade = 5,
+	BaseCost = 30,
+	CostMult = 1.45,
+}
+
+function Config.GetBackpackCapacity(level)
+	return Config.Backpack.BaseCapacity + Config.Backpack.CapacityPerUpgrade * level
+end
+
+function Config.GetBackpackCost(level)
+	return math.floor(Config.Backpack.BaseCost * Config.Backpack.CostMult ^ level)
+end
 
 Config.AutosaveInterval = 60
 Config.LeaderboardRefreshInterval = 60
@@ -308,6 +325,8 @@ end)
 
 local buffer = {} -- scanned cards ready to be rolled
 local scanCache = {} -- userId -> card (everything scanned this server session)
+local cacheList = {} -- same cards as an array, for fast random fallback picks
+local refilling = false
 local rarePool = {} -- tierName -> {card, ...} (merged from the global store)
 local pendingSubmits = {} -- discovered Rare+ cards not yet flushed to the store
 local legendCards = {}
@@ -417,17 +436,19 @@ end
 local function scanAndStore(userId, basicInfo)
 	local card = Scanner.Scan(userId, basicInfo)
 	scanCache[userId] = card
+	table.insert(cacheList, card)
 	submitIfRare(card)
 	return card
 end
 
 local function refillTick()
-	if #buffer >= Config.Roll.BufferTarget then
+	if refilling or #buffer >= Config.Roll.BufferTarget then
 		return
 	end
+	refilling = true
 
 	local candidates = {}
-	for _ = 1, 10 do
+	for _ = 1, 15 do
 		table.insert(candidates, randomUserId())
 	end
 	local found = Scanner.LookupUsers(candidates)
@@ -437,6 +458,7 @@ local function refillTick()
 			offlineMode = true
 			warn("[ECI] Account lookups unavailable (offline Studio?) — switching to stub cards so you can still test.")
 		end
+		refilling = false
 		return
 	end
 	consecutiveLookupFailures = 0
@@ -444,7 +466,7 @@ local function refillTick()
 
 	local scanned = 0
 	for userId, basicInfo in found do
-		if scanned >= 3 then
+		if scanned >= 6 then
 			break
 		end
 		if not scanCache[userId] then
@@ -452,6 +474,7 @@ local function refillTick()
 			table.insert(buffer, scanAndStore(userId, basicInfo))
 		end
 	end
+	refilling = false
 end
 
 -- ===== offline stubs =======================================================
@@ -568,8 +591,8 @@ local function drawFromRarePool()
 end
 
 local function anyCachedCard()
-	for _, card in scanCache do
-		return card
+	if #cacheList > 0 then
+		return cacheList[math.random(1, #cacheList)]
 	end
 	return nil
 end
@@ -588,13 +611,17 @@ function CardPool.Draw(stats)
 	end
 
 	if #buffer > 0 then
-		return table.remove(buffer, 1)
+		local card = table.remove(buffer, 1)
+		if #buffer < Config.Roll.BufferTarget / 2 then
+			task.spawn(refillTick) -- start restocking before we run dry
+		end
+		return card
 	end
 
-	-- buffer dry: dupes are allowed, so serve anything we know
-	return drawFromRarePool()
-		or anyCachedCard()
-		or (offlineMode and makeStubCard())
+	-- buffer dry: restock urgently, and serve a random known card meanwhile
+	task.spawn(refillTick)
+	return anyCachedCard()
+		or drawFromRarePool()
 		or makeStubCard()
 end
 
@@ -634,7 +661,9 @@ end
 local DEFAULT_DATA = {
 	Coins = 0,
 	TotalEarned = 0,
-	TotalRolls = 0,
+	TotalRolls = 0, -- all-time, never goes down
+	RollsBalance = 0, -- spendable rolls (backpack upgrades cost these)
+	BackpackLevel = 0,
 	BestTier = 0, -- highest tier index ever pulled
 	Upgrades = {}, -- nodeId -> level
 	Cards = {}, -- userId (as string) -> {Name, DisplayName, Tier, Boost, Traits, Flavor?, Count}
@@ -891,6 +920,7 @@ local unequipRemote = makeRemote("Unequip")
 local equipBestRemote = makeRemote("EquipBest")
 local sellDupesRemote = makeRemote("SellDupes")
 local toggleAutoRemote = makeRemote("ToggleAuto")
+local backpackRemote = makeRemote("UpgradeBackpack")
 local stateRemote = makeRemote("StateChanged")
 local rollResultRemote = makeRemote("RollResult")
 local tickerRemote = makeRemote("Ticker")
@@ -913,12 +943,25 @@ local function computeRate(data, stats)
 	return Config.Economy.BaseRate * (1 + boostSum) * stats.CoinMult
 end
 
+local function countUnique(cards)
+	local count = 0
+	for _ in cards do
+		count += 1
+	end
+	return count
+end
+
 local function buildState(session, includeCards)
 	local data = session.Data
 	local state = {
 		Coins = data.Coins,
 		TotalEarned = data.TotalEarned,
 		TotalRolls = data.TotalRolls,
+		RollsBalance = data.RollsBalance,
+		BackpackLevel = data.BackpackLevel,
+		BackpackCapacity = Config.GetBackpackCapacity(data.BackpackLevel),
+		BackpackCost = Config.GetBackpackCost(data.BackpackLevel),
+		CardCount = countUnique(data.Cards),
 		BestTier = data.BestTier,
 		Upgrades = data.Upgrades,
 		Equipped = data.Equipped,
@@ -951,12 +994,21 @@ end
 
 -- ===== rolling =============================================================
 
-local function addCardToCollection(data, card)
+-- Adds a rolled card to the collection. Dupes stack for free; a NEW unique
+-- card when the backpack is full gets auto-sold for coins instead.
+local function addCardToCollection(data, stats, card)
 	local key = tostring(card.UserId)
 	local owned = data.Cards[key]
 	if owned then
 		owned.Count += 1
-		return false, owned.Count
+		return { IsNew = false, Count = owned.Count }
+	end
+	if countUnique(data.Cards) >= Config.GetBackpackCapacity(data.BackpackLevel) then
+		local tier = Config.TierByName[card.Tier]
+		local soldFor = math.floor(tier.SellValue * stats.DupeMult)
+		data.Coins += soldFor
+		data.TotalEarned += soldFor
+		return { IsNew = false, Count = 0, AutoSold = true, SoldFor = soldFor }
 	end
 	data.Cards[key] = {
 		UserId = card.UserId,
@@ -968,7 +1020,7 @@ local function addCardToCollection(data, card)
 		Flavor = card.Flavor,
 		Count = 1,
 	}
-	return true, 1
+	return { IsNew = true, Count = 1 }
 end
 
 local function performRoll(player, isAuto)
@@ -1000,8 +1052,9 @@ local function performRoll(player, isAuto)
 	local results = {}
 	for _ = 1, count do
 		local card = CardPool.Draw(stats)
-		local isNew, ownedCount = addCardToCollection(data, card)
+		local outcome = addCardToCollection(data, stats, card)
 		data.TotalRolls += 1
+		data.RollsBalance += 1
 
 		local tier = Config.TierByName[card.Tier]
 		if tier.Index > data.BestTier then
@@ -1019,13 +1072,18 @@ local function performRoll(player, isAuto)
 			Boost = card.Boost,
 			Traits = card.Traits,
 			Flavor = card.Flavor,
-			IsNew = isNew,
-			Count = ownedCount,
+			IsNew = outcome.IsNew,
+			Count = outcome.Count,
+			AutoSold = outcome.AutoSold,
+			SoldFor = outcome.SoldFor,
 		})
 	end
 
 	rollResultRemote:FireClient(player, { Cards = results, Auto = isAuto })
-	pushState(player, true)
+	-- don't resend the whole collection per roll (lag!) — the income loop
+	-- flushes it within a second
+	session.CardsDirty = true
+	pushState(player, false)
 end
 
 -- ===== player lifecycle ====================================================
@@ -1056,6 +1114,7 @@ local function onPlayerAdded(player)
 		Stats = stats,
 		NextRollAt = 0,
 		NextAutoAt = 0,
+		CardsDirty = false,
 		CoinsValue = coinsValue,
 		RollsValue = rollsValue,
 	}
@@ -1242,9 +1301,25 @@ toggleAutoRemote.OnServerEvent:Connect(function(player)
 	pushState(player, false)
 end)
 
+backpackRemote.OnServerEvent:Connect(function(player)
+	local session = sessions[player]
+	if not session then
+		return
+	end
+	local data = session.Data
+	local cost = Config.GetBackpackCost(data.BackpackLevel)
+	if data.RollsBalance < cost then
+		return
+	end
+	data.RollsBalance -= cost
+	data.BackpackLevel += 1
+	pushState(player, false)
+end)
+
 -- ===== loops ===============================================================
 
--- coin income, once per second
+-- coin income once per second; also flushes the collection to the client
+-- if rolls changed it since the last tick (throttled to avoid lag)
 task.spawn(function()
 	while true do
 		task.wait(1)
@@ -1252,7 +1327,9 @@ task.spawn(function()
 			local earned = computeRate(session.Data, session.Stats)
 			session.Data.Coins += earned
 			session.Data.TotalEarned += earned
-			pushState(player, false)
+			local includeCards = session.CardsDirty
+			session.CardsDirty = false
+			pushState(player, includeCards)
 		end
 	end
 end)
@@ -1329,7 +1406,7 @@ local Format = require(Shared:WaitForChild("Format"))
 
 local Scanner = {}
 
-local MAX_WORN_ASSETS_CHECKED = 8
+local MAX_WORN_ASSETS_CHECKED = 5
 local PROXY_FAILURE_LIMIT = 3
 local PROXY_RETRY_AFTER = 300 -- seconds proxy stays disabled after repeated failures
 
@@ -1706,7 +1783,7 @@ local function buildPath(fromNode, toNode, folder)
 	end
 	local mid = (a + b) / 2
 	makePart({
-		Name = "Path",
+		Name = "Path_" .. toNode.Id, -- client shows/hides this with its pad
 		Size = Vector3.new(1.4, 0.1, distance - 6),
 		CFrame = CFrame.lookAt(mid, b),
 		Color = Config.BranchColors[toNode.Branch] or Color3.fromRGB(200, 200, 200),
@@ -2035,7 +2112,21 @@ function Cards:BuildCardFrame(card, width, parent)
 		})
 	end
 
-	if card.IsNew then
+	if card.AutoSold then
+		local badge = create("TextLabel", {
+			BackgroundColor3 = Color3.fromRGB(255, 140, 50),
+			Position = UDim2.new(0, -8, 0, -8),
+			Size = UDim2.fromOffset(110, 20),
+			Font = Enum.Font.GothamBlack,
+			TextSize = 11,
+			TextColor3 = Color3.fromRGB(60, 25, 0),
+			Text = "BAG FULL — SOLD",
+			Rotation = -8,
+			ZIndex = 13,
+			Parent = frame,
+		})
+		create("UICorner", { CornerRadius = UDim.new(0, 6), Parent = badge })
+	elseif card.IsNew then
 		local badge = create("TextLabel", {
 			BackgroundColor3 = Color3.fromRGB(255, 215, 60),
 			Position = UDim2.new(0, -8, 0, -8),
@@ -2096,7 +2187,22 @@ function Cards:ShowSplash(rollCards, holdSeconds)
 end
 
 function Cards:ShowToast(card)
+	-- cap the stack so fast auto-rolling can't flood the screen (lag guard)
+	local labels = {}
+	for _, child in self.ToastColumn:GetChildren() do
+		if child:IsA("TextLabel") then
+			table.insert(labels, child)
+		end
+	end
+	if #labels >= 8 then
+		labels[1]:Destroy() -- oldest goes first
+	end
+
 	local tier = Config.TierByName[card.Tier] or Config.Tiers[1]
+	local text = ("+ %s  %s"):format(card.Tier, card.DisplayName or card.Name)
+	if card.AutoSold then
+		text = ("💰 full bag — sold %s (+%s)"):format(card.DisplayName or card.Name, Format(card.SoldFor or 0))
+	end
 	local toast = create("TextLabel", {
 		BackgroundColor3 = PANEL_COLOR,
 		BackgroundTransparency = 0.15,
@@ -2105,7 +2211,7 @@ function Cards:ShowToast(card)
 		TextSize = 13,
 		TextColor3 = tier.Color,
 		TextTruncate = Enum.TextTruncate.AtEnd,
-		Text = ("+ %s  %s"):format(card.Tier, card.DisplayName or card.Name),
+		Text = text,
 		Parent = self.ToastColumn,
 	})
 	create("UICorner", { CornerRadius = UDim.new(0, 8), Parent = toast })
@@ -2169,6 +2275,7 @@ local unequipRemote = remotes:WaitForChild("Unequip")
 local equipBestRemote = remotes:WaitForChild("EquipBest")
 local sellDupesRemote = remotes:WaitForChild("SellDupes")
 local toggleAutoRemote = remotes:WaitForChild("ToggleAuto")
+local backpackRemote = remotes:WaitForChild("UpgradeBackpack")
 local stateRemote = remotes:WaitForChild("StateChanged")
 local rollResultRemote = remotes:WaitForChild("RollResult")
 local tickerRemote = remotes:WaitForChild("Ticker")
@@ -2205,6 +2312,9 @@ ui = UI.new({
 	end,
 	OnToggleAuto = function()
 		toggleAutoRemote:FireServer()
+	end,
+	OnUpgradeBackpack = function()
+		backpackRemote:FireServer()
 	end,
 })
 
@@ -2276,7 +2386,7 @@ function UI.new(callbacks)
 	self.Callbacks = callbacks
 	self.State = nil
 	self.Cards = {} -- latest full card collection from the server
-	self.PadBillboards = {}
+	self.Pads = {}
 	self.CollectionDirty = false
 	self.RebuildScheduled = false
 	self.TickerToken = 0
@@ -2427,7 +2537,7 @@ function UI:Build()
 
 	self:BuildCollection()
 	task.spawn(function()
-		self:BuildPadBillboards()
+		self:BuildPadSurfaces()
 	end)
 end
 
@@ -2475,10 +2585,10 @@ function UI:BuildCollection()
 
 	local equipBest = create("TextButton", {
 		Position = UDim2.new(0, 16, 0, 38),
-		Size = UDim2.fromOffset(120, 32),
+		Size = UDim2.fromOffset(104, 32),
 		BackgroundColor3 = COLORS.Green,
 		Font = Enum.Font.GothamBold,
-		TextSize = 14,
+		TextSize = 13,
 		TextColor3 = COLORS.Text,
 		Text = "Equip Best",
 		Parent = panel,
@@ -2489,19 +2599,35 @@ function UI:BuildCollection()
 	end)
 
 	local sellDupes = create("TextButton", {
-		Position = UDim2.new(0, 146, 0, 38),
-		Size = UDim2.fromOffset(130, 32),
+		Position = UDim2.new(0, 126, 0, 38),
+		Size = UDim2.fromOffset(104, 32),
 		BackgroundColor3 = COLORS.Gold,
 		Font = Enum.Font.GothamBold,
-		TextSize = 14,
+		TextSize = 13,
 		TextColor3 = Color3.fromRGB(60, 40, 0),
-		Text = "Sell All Dupes",
+		Text = "Sell Dupes",
 		Parent = panel,
 	})
 	addCorner(sellDupes, UDim.new(0, 10))
 	sellDupes.Activated:Connect(function()
 		self.BuySound:Play()
 		self.Callbacks.OnSellDupes("ALL")
+	end)
+
+	-- backpack upgrade: paid in ROLLS, +5 capacity, cost grows 45% each time
+	self.BackpackButton = create("TextButton", {
+		Position = UDim2.new(0, 236, 0, 38),
+		Size = UDim2.fromOffset(128, 32),
+		BackgroundColor3 = COLORS.Disabled,
+		Font = Enum.Font.GothamBold,
+		TextSize = 13,
+		TextColor3 = COLORS.Text,
+		Text = "🎒 +5 — 30 rolls",
+		Parent = panel,
+	})
+	addCorner(self.BackpackButton, UDim.new(0, 10))
+	self.BackpackButton.Activated:Connect(function()
+		self.Callbacks.OnUpgradeBackpack()
 	end)
 
 	self.CollectionScroll = create("ScrollingFrame", {
@@ -2655,13 +2781,26 @@ function UI:ScheduleCollectionRebuild()
 	end)
 end
 
--- ===== upgrade pad billboards ==============================================
+-- ===== upgrade pads ========================================================
+-- Text is drawn ON each pad (SurfaceGui on the top face), and pads only
+-- appear once their prerequisite is owned — the tree reveals itself one
+-- upgrade at a time. All of this is per-player, so it's done locally.
 
-function UI:BuildPadBillboards()
+function UI:BuildPadSurfaces()
+	local playerGui = Players.LocalPlayer:WaitForChild("PlayerGui")
 	local tree = workspace:WaitForChild("UpgradeTree", 30)
 	if not tree then
 		return
 	end
+
+	local pathParts = {}
+	for _, child in tree:GetChildren() do
+		local nodeId = child.Name:match("^Path_(.+)$")
+		if nodeId then
+			pathParts[nodeId] = child
+		end
+	end
+
 	for _, pad in tree:GetChildren() do
 		local nodeId = pad:GetAttribute("NodeId")
 		local treeNode = nodeId and Config.NodeById[nodeId]
@@ -2669,78 +2808,108 @@ function UI:BuildPadBillboards()
 			continue
 		end
 
-		local billboard = create("BillboardGui", {
+		local gui = create("SurfaceGui", {
 			Adornee = pad,
-			Size = UDim2.fromOffset(170, 92),
-			StudsOffset = Vector3.new(0, 4.6, 0),
-			MaxDistance = 70,
-			Parent = self.ScreenGui,
+			Face = Enum.NormalId.Top,
+			SizingMode = Enum.SurfaceGuiSizingMode.PixelsPerStud,
+			PixelsPerStud = 25,
+			Parent = playerGui,
 		})
 		local bg = create("Frame", {
-			BackgroundColor3 = COLORS.Panel,
-			BackgroundTransparency = 0.2,
+			BackgroundTransparency = 1,
 			Size = UDim2.new(1, 0, 1, 0),
-			Parent = billboard,
+			-- endgame pads are approached from the north, flip their text
+			Rotation = if treeNode.Branch == "Endgame" then 180 else 0,
+			Parent = gui,
 		})
-		addCorner(bg, UDim.new(0, 10))
 		create("TextLabel", {
 			BackgroundTransparency = 1,
-			Position = UDim2.new(0, 6, 0, 4),
-			Size = UDim2.new(1, -12, 0, 22),
-			Font = Enum.Font.GothamBold,
-			TextSize = 14,
-			TextColor3 = Config.BranchColors[treeNode.Branch] or COLORS.Text,
-			TextTruncate = Enum.TextTruncate.AtEnd,
+			Position = UDim2.new(0, 8, 0, 6),
+			Size = UDim2.new(1, -16, 0, 44),
+			Font = Enum.Font.GothamBlack,
+			TextSize = 24,
+			TextWrapped = true,
+			TextColor3 = Color3.fromRGB(15, 10, 25),
 			Text = treeNode.Name,
 			Parent = bg,
 		})
 		create("TextLabel", {
 			BackgroundTransparency = 1,
-			Position = UDim2.new(0, 6, 0, 26),
-			Size = UDim2.new(1, -12, 0, 30),
-			Font = Enum.Font.Gotham,
-			TextSize = 11,
+			Position = UDim2.new(0, 10, 0, 52),
+			Size = UDim2.new(1, -20, 0, 60),
+			Font = Enum.Font.GothamBold,
+			TextSize = 17,
 			TextWrapped = true,
-			TextColor3 = COLORS.TextDim,
+			TextColor3 = Color3.fromRGB(35, 26, 55),
 			Text = treeNode.Desc,
 			Parent = bg,
 		})
 		local costLabel = create("TextLabel", {
 			BackgroundTransparency = 1,
-			Position = UDim2.new(0, 6, 1, -28),
-			Size = UDim2.new(1, -12, 0, 24),
+			Position = UDim2.new(0, 8, 1, -62),
+			Size = UDim2.new(1, -16, 0, 54),
 			Font = Enum.Font.GothamBlack,
-			TextSize = 14,
-			TextColor3 = COLORS.Gold,
+			TextSize = 28,
+			TextWrapped = true,
+			TextColor3 = COLORS.Text,
 			Text = "",
 			Parent = bg,
 		})
-		self.PadBillboards[nodeId] = costLabel
+
+		self.Pads[nodeId] = {
+			Pad = pad,
+			Trim = pad:FindFirstChild("Trim"),
+			Prompt = pad:FindFirstChildWhichIsA("ProximityPrompt"),
+			Path = pathParts[nodeId],
+			Gui = gui,
+			CostLabel = costLabel,
+		}
 	end
 	if self.State then
 		self:UpdatePads()
 	end
 end
 
+local function setPadVisible(entry, visible)
+	local modifier = if visible then 0 else 1
+	entry.Pad.LocalTransparencyModifier = modifier
+	if entry.Trim then
+		entry.Trim.LocalTransparencyModifier = modifier
+	end
+	if entry.Path then
+		entry.Path.LocalTransparencyModifier = modifier
+	end
+	if entry.Prompt then
+		entry.Prompt.Enabled = visible
+	end
+	entry.Gui.Enabled = visible
+end
+
 function UI:UpdatePads()
 	local state = self.State
-	for nodeId, costLabel in self.PadBillboards do
+	for nodeId, entry in self.Pads do
 		local treeNode = Config.NodeById[nodeId]
 		local level = state.Upgrades[nodeId] or 0
-		local locked = treeNode.Requires and (state.Upgrades[treeNode.Requires] or 0) < 1
+		local unlocked = not treeNode.Requires or (state.Upgrades[treeNode.Requires] or 0) >= 1
+
+		setPadVisible(entry, unlocked)
+		if not unlocked then
+			continue
+		end
 
 		if treeNode.MaxLevel and level >= treeNode.MaxLevel then
-			costLabel.Text = "✓ OWNED"
-			costLabel.TextColor3 = COLORS.Green
-		elseif locked then
-			local parent = Config.NodeById[treeNode.Requires]
-			costLabel.Text = "🔒 needs " .. parent.Name
-			costLabel.TextColor3 = COLORS.TextDim
+			entry.CostLabel.Text = "✓ OWNED"
+			entry.CostLabel.TextColor3 = Color3.fromRGB(10, 60, 25)
+			if entry.Prompt then
+				entry.Prompt.Enabled = false -- nothing left to buy here
+			end
 		else
 			local cost = Config.GetNodeCost(treeNode, level)
-			local prefix = if treeNode.MaxLevel == nil then ("Lv %d  •  "):format(level) else ""
-			costLabel.Text = prefix .. "🪙 " .. Format(cost)
-			costLabel.TextColor3 = if state.Coins >= cost then COLORS.Green else COLORS.Red
+			local prefix = if treeNode.MaxLevel == nil then ("Lv %d\n"):format(level) else ""
+			entry.CostLabel.Text = prefix .. "🪙 " .. Format(cost)
+			entry.CostLabel.TextColor3 = if state.Coins >= cost
+				then Color3.fromRGB(10, 60, 25)
+				else Color3.fromRGB(120, 20, 30)
 		end
 	end
 end
@@ -2793,7 +2962,8 @@ function UI:Update(state)
 	self.CoinsLabel.Text = "🪙 " .. Format(state.Coins)
 	self.RateLabel.Text = ("+%s coins/s"):format(Format(state.CoinsPerSec))
 	local bestTier = Config.Tiers[state.BestTier]
-	self.RollsLabel.Text = ("Rolls: %s%s"):format(
+	self.RollsLabel.Text = ("Rolls: %s  (all-time %s)%s"):format(
+		Format(state.RollsBalance),
 		Format(state.TotalRolls),
 		bestTier and ("  •  Best: " .. bestTier.Name) or ""
 	)
@@ -2805,7 +2975,19 @@ function UI:Update(state)
 	self.AutoButton.Text = state.AutoOn and "AUTO: ON" or "AUTO: OFF"
 	self.AutoButton.BackgroundColor3 = if state.AutoOn then COLORS.Green else COLORS.Disabled
 
-	self.SlotsLabel.Text = ("CARDS — equipped %d/%d"):format(#state.Equipped, state.Stats.EquipSlots)
+	self.SlotsLabel.Text = ("CARDS %d/%d  —  equipped %d/%d"):format(
+		state.CardCount,
+		state.BackpackCapacity,
+		#state.Equipped,
+		state.Stats.EquipSlots
+	)
+	self.BackpackButton.Text = ("🎒 +%d — %s rolls"):format(
+		Config.Backpack.CapacityPerUpgrade,
+		Format(state.BackpackCost)
+	)
+	self.BackpackButton.BackgroundColor3 = if state.RollsBalance >= state.BackpackCost
+		then COLORS.Purple
+		else COLORS.Disabled
 
 	-- remotes deep-copy tables, so compare equipped by content, not identity
 	if previous and table.concat(state.Equipped, ",") ~= table.concat(previous.Equipped, ",") then

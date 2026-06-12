@@ -15,6 +15,7 @@ local unequipRemote = remotes:WaitForChild("Unequip")
 local equipBestRemote = remotes:WaitForChild("EquipBest")
 local sellDupesRemote = remotes:WaitForChild("SellDupes")
 local toggleAutoRemote = remotes:WaitForChild("ToggleAuto")
+local backpackRemote = remotes:WaitForChild("UpgradeBackpack")
 local stateRemote = remotes:WaitForChild("StateChanged")
 local rollResultRemote = remotes:WaitForChild("RollResult")
 local tickerRemote = remotes:WaitForChild("Ticker")
@@ -51,6 +52,9 @@ ui = UI.new({
 	end,
 	OnToggleAuto = function()
 		toggleAutoRemote:FireServer()
+	end,
+	OnUpgradeBackpack = function()
+		backpackRemote:FireServer()
 	end,
 })
 

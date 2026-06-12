@@ -208,7 +208,21 @@ function Cards:BuildCardFrame(card, width, parent)
 		})
 	end
 
-	if card.IsNew then
+	if card.AutoSold then
+		local badge = create("TextLabel", {
+			BackgroundColor3 = Color3.fromRGB(255, 140, 50),
+			Position = UDim2.new(0, -8, 0, -8),
+			Size = UDim2.fromOffset(110, 20),
+			Font = Enum.Font.GothamBlack,
+			TextSize = 11,
+			TextColor3 = Color3.fromRGB(60, 25, 0),
+			Text = "BAG FULL — SOLD",
+			Rotation = -8,
+			ZIndex = 13,
+			Parent = frame,
+		})
+		create("UICorner", { CornerRadius = UDim.new(0, 6), Parent = badge })
+	elseif card.IsNew then
 		local badge = create("TextLabel", {
 			BackgroundColor3 = Color3.fromRGB(255, 215, 60),
 			Position = UDim2.new(0, -8, 0, -8),
@@ -269,7 +283,22 @@ function Cards:ShowSplash(rollCards, holdSeconds)
 end
 
 function Cards:ShowToast(card)
+	-- cap the stack so fast auto-rolling can't flood the screen (lag guard)
+	local labels = {}
+	for _, child in self.ToastColumn:GetChildren() do
+		if child:IsA("TextLabel") then
+			table.insert(labels, child)
+		end
+	end
+	if #labels >= 8 then
+		labels[1]:Destroy() -- oldest goes first
+	end
+
 	local tier = Config.TierByName[card.Tier] or Config.Tiers[1]
+	local text = ("+ %s  %s"):format(card.Tier, card.DisplayName or card.Name)
+	if card.AutoSold then
+		text = ("💰 full bag — sold %s (+%s)"):format(card.DisplayName or card.Name, Format(card.SoldFor or 0))
+	end
 	local toast = create("TextLabel", {
 		BackgroundColor3 = PANEL_COLOR,
 		BackgroundTransparency = 0.15,
@@ -278,7 +307,7 @@ function Cards:ShowToast(card)
 		TextSize = 13,
 		TextColor3 = tier.Color,
 		TextTruncate = Enum.TextTruncate.AtEnd,
-		Text = ("+ %s  %s"):format(card.Tier, card.DisplayName or card.Name),
+		Text = text,
 		Parent = self.ToastColumn,
 	})
 	create("UICorner", { CornerRadius = UDim.new(0, 8), Parent = toast })

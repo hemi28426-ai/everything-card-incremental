@@ -22,7 +22,7 @@ local Format = require(Shared:WaitForChild("Format"))
 
 local Scanner = {}
 
-local MAX_WORN_ASSETS_CHECKED = 8
+local MAX_WORN_ASSETS_CHECKED = 5
 local PROXY_FAILURE_LIMIT = 3
 local PROXY_RETRY_AFTER = 300 -- seconds proxy stays disabled after repeated failures
 

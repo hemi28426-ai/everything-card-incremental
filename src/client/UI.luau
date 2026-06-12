@@ -46,7 +46,7 @@ function UI.new(callbacks)
 	self.Callbacks = callbacks
 	self.State = nil
 	self.Cards = {} -- latest full card collection from the server
-	self.PadBillboards = {}
+	self.Pads = {}
 	self.CollectionDirty = false
 	self.RebuildScheduled = false
 	self.TickerToken = 0
@@ -197,7 +197,7 @@ function UI:Build()
 
 	self:BuildCollection()
 	task.spawn(function()
-		self:BuildPadBillboards()
+		self:BuildPadSurfaces()
 	end)
 end
 
@@ -245,10 +245,10 @@ function UI:BuildCollection()
 
 	local equipBest = create("TextButton", {
 		Position = UDim2.new(0, 16, 0, 38),
-		Size = UDim2.fromOffset(120, 32),
+		Size = UDim2.fromOffset(104, 32),
 		BackgroundColor3 = COLORS.Green,
 		Font = Enum.Font.GothamBold,
-		TextSize = 14,
+		TextSize = 13,
 		TextColor3 = COLORS.Text,
 		Text = "Equip Best",
 		Parent = panel,
@@ -259,19 +259,35 @@ function UI:BuildCollection()
 	end)
 
 	local sellDupes = create("TextButton", {
-		Position = UDim2.new(0, 146, 0, 38),
-		Size = UDim2.fromOffset(130, 32),
+		Position = UDim2.new(0, 126, 0, 38),
+		Size = UDim2.fromOffset(104, 32),
 		BackgroundColor3 = COLORS.Gold,
 		Font = Enum.Font.GothamBold,
-		TextSize = 14,
+		TextSize = 13,
 		TextColor3 = Color3.fromRGB(60, 40, 0),
-		Text = "Sell All Dupes",
+		Text = "Sell Dupes",
 		Parent = panel,
 	})
 	addCorner(sellDupes, UDim.new(0, 10))
 	sellDupes.Activated:Connect(function()
 		self.BuySound:Play()
 		self.Callbacks.OnSellDupes("ALL")
+	end)
+
+	-- backpack upgrade: paid in ROLLS, +5 capacity, cost grows 45% each time
+	self.BackpackButton = create("TextButton", {
+		Position = UDim2.new(0, 236, 0, 38),
+		Size = UDim2.fromOffset(128, 32),
+		BackgroundColor3 = COLORS.Disabled,
+		Font = Enum.Font.GothamBold,
+		TextSize = 13,
+		TextColor3 = COLORS.Text,
+		Text = "🎒 +5 — 30 rolls",
+		Parent = panel,
+	})
+	addCorner(self.BackpackButton, UDim.new(0, 10))
+	self.BackpackButton.Activated:Connect(function()
+		self.Callbacks.OnUpgradeBackpack()
 	end)
 
 	self.CollectionScroll = create("ScrollingFrame", {
@@ -425,13 +441,26 @@ function UI:ScheduleCollectionRebuild()
 	end)
 end
 
--- ===== upgrade pad billboards ==============================================
+-- ===== upgrade pads ========================================================
+-- Text is drawn ON each pad (SurfaceGui on the top face), and pads only
+-- appear once their prerequisite is owned — the tree reveals itself one
+-- upgrade at a time. All of this is per-player, so it's done locally.
 
-function UI:BuildPadBillboards()
+function UI:BuildPadSurfaces()
+	local playerGui = Players.LocalPlayer:WaitForChild("PlayerGui")
 	local tree = workspace:WaitForChild("UpgradeTree", 30)
 	if not tree then
 		return
 	end
+
+	local pathParts = {}
+	for _, child in tree:GetChildren() do
+		local nodeId = child.Name:match("^Path_(.+)$")
+		if nodeId then
+			pathParts[nodeId] = child
+		end
+	end
+
 	for _, pad in tree:GetChildren() do
 		local nodeId = pad:GetAttribute("NodeId")
 		local treeNode = nodeId and Config.NodeById[nodeId]
@@ -439,78 +468,108 @@ function UI:BuildPadBillboards()
 			continue
 		end
 
-		local billboard = create("BillboardGui", {
+		local gui = create("SurfaceGui", {
 			Adornee = pad,
-			Size = UDim2.fromOffset(170, 92),
-			StudsOffset = Vector3.new(0, 4.6, 0),
-			MaxDistance = 70,
-			Parent = self.ScreenGui,
+			Face = Enum.NormalId.Top,
+			SizingMode = Enum.SurfaceGuiSizingMode.PixelsPerStud,
+			PixelsPerStud = 25,
+			Parent = playerGui,
 		})
 		local bg = create("Frame", {
-			BackgroundColor3 = COLORS.Panel,
-			BackgroundTransparency = 0.2,
+			BackgroundTransparency = 1,
 			Size = UDim2.new(1, 0, 1, 0),
-			Parent = billboard,
+			-- endgame pads are approached from the north, flip their text
+			Rotation = if treeNode.Branch == "Endgame" then 180 else 0,
+			Parent = gui,
 		})
-		addCorner(bg, UDim.new(0, 10))
 		create("TextLabel", {
 			BackgroundTransparency = 1,
-			Position = UDim2.new(0, 6, 0, 4),
-			Size = UDim2.new(1, -12, 0, 22),
-			Font = Enum.Font.GothamBold,
-			TextSize = 14,
-			TextColor3 = Config.BranchColors[treeNode.Branch] or COLORS.Text,
-			TextTruncate = Enum.TextTruncate.AtEnd,
+			Position = UDim2.new(0, 8, 0, 6),
+			Size = UDim2.new(1, -16, 0, 44),
+			Font = Enum.Font.GothamBlack,
+			TextSize = 24,
+			TextWrapped = true,
+			TextColor3 = Color3.fromRGB(15, 10, 25),
 			Text = treeNode.Name,
 			Parent = bg,
 		})
 		create("TextLabel", {
 			BackgroundTransparency = 1,
-			Position = UDim2.new(0, 6, 0, 26),
-			Size = UDim2.new(1, -12, 0, 30),
-			Font = Enum.Font.Gotham,
-			TextSize = 11,
+			Position = UDim2.new(0, 10, 0, 52),
+			Size = UDim2.new(1, -20, 0, 60),
+			Font = Enum.Font.GothamBold,
+			TextSize = 17,
 			TextWrapped = true,
-			TextColor3 = COLORS.TextDim,
+			TextColor3 = Color3.fromRGB(35, 26, 55),
 			Text = treeNode.Desc,
 			Parent = bg,
 		})
 		local costLabel = create("TextLabel", {
 			BackgroundTransparency = 1,
-			Position = UDim2.new(0, 6, 1, -28),
-			Size = UDim2.new(1, -12, 0, 24),
+			Position = UDim2.new(0, 8, 1, -62),
+			Size = UDim2.new(1, -16, 0, 54),
 			Font = Enum.Font.GothamBlack,
-			TextSize = 14,
-			TextColor3 = COLORS.Gold,
+			TextSize = 28,
+			TextWrapped = true,
+			TextColor3 = COLORS.Text,
 			Text = "",
 			Parent = bg,
 		})
-		self.PadBillboards[nodeId] = costLabel
+
+		self.Pads[nodeId] = {
+			Pad = pad,
+			Trim = pad:FindFirstChild("Trim"),
+			Prompt = pad:FindFirstChildWhichIsA("ProximityPrompt"),
+			Path = pathParts[nodeId],
+			Gui = gui,
+			CostLabel = costLabel,
+		}
 	end
 	if self.State then
 		self:UpdatePads()
 	end
 end
 
+local function setPadVisible(entry, visible)
+	local modifier = if visible then 0 else 1
+	entry.Pad.LocalTransparencyModifier = modifier
+	if entry.Trim then
+		entry.Trim.LocalTransparencyModifier = modifier
+	end
+	if entry.Path then
+		entry.Path.LocalTransparencyModifier = modifier
+	end
+	if entry.Prompt then
+		entry.Prompt.Enabled = visible
+	end
+	entry.Gui.Enabled = visible
+end
+
 function UI:UpdatePads()
 	local state = self.State
-	for nodeId, costLabel in self.PadBillboards do
+	for nodeId, entry in self.Pads do
 		local treeNode = Config.NodeById[nodeId]
 		local level = state.Upgrades[nodeId] or 0
-		local locked = treeNode.Requires and (state.Upgrades[treeNode.Requires] or 0) < 1
+		local unlocked = not treeNode.Requires or (state.Upgrades[treeNode.Requires] or 0) >= 1
+
+		setPadVisible(entry, unlocked)
+		if not unlocked then
+			continue
+		end
 
 		if treeNode.MaxLevel and level >= treeNode.MaxLevel then
-			costLabel.Text = "✓ OWNED"
-			costLabel.TextColor3 = COLORS.Green
-		elseif locked then
-			local parent = Config.NodeById[treeNode.Requires]
-			costLabel.Text = "🔒 needs " .. parent.Name
-			costLabel.TextColor3 = COLORS.TextDim
+			entry.CostLabel.Text = "✓ OWNED"
+			entry.CostLabel.TextColor3 = Color3.fromRGB(10, 60, 25)
+			if entry.Prompt then
+				entry.Prompt.Enabled = false -- nothing left to buy here
+			end
 		else
 			local cost = Config.GetNodeCost(treeNode, level)
-			local prefix = if treeNode.MaxLevel == nil then ("Lv %d  •  "):format(level) else ""
-			costLabel.Text = prefix .. "🪙 " .. Format(cost)
-			costLabel.TextColor3 = if state.Coins >= cost then COLORS.Green else COLORS.Red
+			local prefix = if treeNode.MaxLevel == nil then ("Lv %d\n"):format(level) else ""
+			entry.CostLabel.Text = prefix .. "🪙 " .. Format(cost)
+			entry.CostLabel.TextColor3 = if state.Coins >= cost
+				then Color3.fromRGB(10, 60, 25)
+				else Color3.fromRGB(120, 20, 30)
 		end
 	end
 end
@@ -563,7 +622,8 @@ function UI:Update(state)
 	self.CoinsLabel.Text = "🪙 " .. Format(state.Coins)
 	self.RateLabel.Text = ("+%s coins/s"):format(Format(state.CoinsPerSec))
 	local bestTier = Config.Tiers[state.BestTier]
-	self.RollsLabel.Text = ("Rolls: %s%s"):format(
+	self.RollsLabel.Text = ("Rolls: %s  (all-time %s)%s"):format(
+		Format(state.RollsBalance),
 		Format(state.TotalRolls),
 		bestTier and ("  •  Best: " .. bestTier.Name) or ""
 	)
@@ -575,7 +635,19 @@ function UI:Update(state)
 	self.AutoButton.Text = state.AutoOn and "AUTO: ON" or "AUTO: OFF"
 	self.AutoButton.BackgroundColor3 = if state.AutoOn then COLORS.Green else COLORS.Disabled
 
-	self.SlotsLabel.Text = ("CARDS — equipped %d/%d"):format(#state.Equipped, state.Stats.EquipSlots)
+	self.SlotsLabel.Text = ("CARDS %d/%d  —  equipped %d/%d"):format(
+		state.CardCount,
+		state.BackpackCapacity,
+		#state.Equipped,
+		state.Stats.EquipSlots
+	)
+	self.BackpackButton.Text = ("🎒 +%d — %s rolls"):format(
+		Config.Backpack.CapacityPerUpgrade,
+		Format(state.BackpackCost)
+	)
+	self.BackpackButton.BackgroundColor3 = if state.RollsBalance >= state.BackpackCost
+		then COLORS.Purple
+		else COLORS.Disabled
 
 	-- remotes deep-copy tables, so compare equipped by content, not identity
 	if previous and table.concat(state.Equipped, ",") ~= table.concat(previous.Equipped, ",") then

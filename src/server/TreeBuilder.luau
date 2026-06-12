@@ -72,7 +72,7 @@ local function buildPath(fromNode, toNode, folder)
 	end
 	local mid = (a + b) / 2
 	makePart({
-		Name = "Path",
+		Name = "Path_" .. toNode.Id, -- client shows/hides this with its pad
 		Size = Vector3.new(1.4, 0.1, distance - 6),
 		CFrame = CFrame.lookAt(mid, b),
 		Color = Config.BranchColors[toNode.Branch] or Color3.fromRGB(200, 200, 200),

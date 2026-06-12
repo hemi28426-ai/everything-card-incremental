@@ -27,7 +27,9 @@ end
 local DEFAULT_DATA = {
 	Coins = 0,
 	TotalEarned = 0,
-	TotalRolls = 0,
+	TotalRolls = 0, -- all-time, never goes down
+	RollsBalance = 0, -- spendable rolls (backpack upgrades cost these)
+	BackpackLevel = 0,
 	BestTier = 0, -- highest tier index ever pulled
 	Upgrades = {}, -- nodeId -> level
 	Cards = {}, -- userId (as string) -> {Name, DisplayName, Tier, Boost, Traits, Flavor?, Count}

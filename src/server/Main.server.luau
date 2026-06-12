@@ -33,6 +33,7 @@ local unequipRemote = makeRemote("Unequip")
 local equipBestRemote = makeRemote("EquipBest")
 local sellDupesRemote = makeRemote("SellDupes")
 local toggleAutoRemote = makeRemote("ToggleAuto")
+local backpackRemote = makeRemote("UpgradeBackpack")
 local stateRemote = makeRemote("StateChanged")
 local rollResultRemote = makeRemote("RollResult")
 local tickerRemote = makeRemote("Ticker")
@@ -55,12 +56,25 @@ local function computeRate(data, stats)
 	return Config.Economy.BaseRate * (1 + boostSum) * stats.CoinMult
 end
 
+local function countUnique(cards)
+	local count = 0
+	for _ in cards do
+		count += 1
+	end
+	return count
+end
+
 local function buildState(session, includeCards)
 	local data = session.Data
 	local state = {
 		Coins = data.Coins,
 		TotalEarned = data.TotalEarned,
 		TotalRolls = data.TotalRolls,
+		RollsBalance = data.RollsBalance,
+		BackpackLevel = data.BackpackLevel,
+		BackpackCapacity = Config.GetBackpackCapacity(data.BackpackLevel),
+		BackpackCost = Config.GetBackpackCost(data.BackpackLevel),
+		CardCount = countUnique(data.Cards),
 		BestTier = data.BestTier,
 		Upgrades = data.Upgrades,
 		Equipped = data.Equipped,
@@ -93,12 +107,21 @@ end
 
 -- ===== rolling =============================================================
 
-local function addCardToCollection(data, card)
+-- Adds a rolled card to the collection. Dupes stack for free; a NEW unique
+-- card when the backpack is full gets auto-sold for coins instead.
+local function addCardToCollection(data, stats, card)
 	local key = tostring(card.UserId)
 	local owned = data.Cards[key]
 	if owned then
 		owned.Count += 1
-		return false, owned.Count
+		return { IsNew = false, Count = owned.Count }
+	end
+	if countUnique(data.Cards) >= Config.GetBackpackCapacity(data.BackpackLevel) then
+		local tier = Config.TierByName[card.Tier]
+		local soldFor = math.floor(tier.SellValue * stats.DupeMult)
+		data.Coins += soldFor
+		data.TotalEarned += soldFor
+		return { IsNew = false, Count = 0, AutoSold = true, SoldFor = soldFor }
 	end
 	data.Cards[key] = {
 		UserId = card.UserId,
@@ -110,7 +133,7 @@ local function addCardToCollection(data, card)
 		Flavor = card.Flavor,
 		Count = 1,
 	}
-	return true, 1
+	return { IsNew = true, Count = 1 }
 end
 
 local function performRoll(player, isAuto)
@@ -142,8 +165,9 @@ local function performRoll(player, isAuto)
 	local results = {}
 	for _ = 1, count do
 		local card = CardPool.Draw(stats)
-		local isNew, ownedCount = addCardToCollection(data, card)
+		local outcome = addCardToCollection(data, stats, card)
 		data.TotalRolls += 1
+		data.RollsBalance += 1
 
 		local tier = Config.TierByName[card.Tier]
 		if tier.Index > data.BestTier then
@@ -161,13 +185,18 @@ local function performRoll(player, isAuto)
 			Boost = card.Boost,
 			Traits = card.Traits,
 			Flavor = card.Flavor,
-			IsNew = isNew,
-			Count = ownedCount,
+			IsNew = outcome.IsNew,
+			Count = outcome.Count,
+			AutoSold = outcome.AutoSold,
+			SoldFor = outcome.SoldFor,
 		})
 	end
 
 	rollResultRemote:FireClient(player, { Cards = results, Auto = isAuto })
-	pushState(player, true)
+	-- don't resend the whole collection per roll (lag!) — the income loop
+	-- flushes it within a second
+	session.CardsDirty = true
+	pushState(player, false)
 end
 
 -- ===== player lifecycle ====================================================
@@ -198,6 +227,7 @@ local function onPlayerAdded(player)
 		Stats = stats,
 		NextRollAt = 0,
 		NextAutoAt = 0,
+		CardsDirty = false,
 		CoinsValue = coinsValue,
 		RollsValue = rollsValue,
 	}
@@ -384,9 +414,25 @@ toggleAutoRemote.OnServerEvent:Connect(function(player)
 	pushState(player, false)
 end)
 
+backpackRemote.OnServerEvent:Connect(function(player)
+	local session = sessions[player]
+	if not session then
+		return
+	end
+	local data = session.Data
+	local cost = Config.GetBackpackCost(data.BackpackLevel)
+	if data.RollsBalance < cost then
+		return
+	end
+	data.RollsBalance -= cost
+	data.BackpackLevel += 1
+	pushState(player, false)
+end)
+
 -- ===== loops ===============================================================
 
--- coin income, once per second
+-- coin income once per second; also flushes the collection to the client
+-- if rolls changed it since the last tick (throttled to avoid lag)
 task.spawn(function()
 	while true do
 		task.wait(1)
@@ -394,7 +440,9 @@ task.spawn(function()
 			local earned = computeRate(session.Data, session.Stats)
 			session.Data.Coins += earned
 			session.Data.TotalEarned += earned
-			pushState(player, false)
+			local includeCards = session.CardsDirty
+			session.CardsDirty = false
+			pushState(player, includeCards)
 		end
 	end
 end)

@@ -29,6 +29,8 @@ end)
 
 local buffer = {} -- scanned cards ready to be rolled
 local scanCache = {} -- userId -> card (everything scanned this server session)
+local cacheList = {} -- same cards as an array, for fast random fallback picks
+local refilling = false
 local rarePool = {} -- tierName -> {card, ...} (merged from the global store)
 local pendingSubmits = {} -- discovered Rare+ cards not yet flushed to the store
 local legendCards = {}
@@ -138,17 +140,19 @@ end
 local function scanAndStore(userId, basicInfo)
 	local card = Scanner.Scan(userId, basicInfo)
 	scanCache[userId] = card
+	table.insert(cacheList, card)
 	submitIfRare(card)
 	return card
 end
 
 local function refillTick()
-	if #buffer >= Config.Roll.BufferTarget then
+	if refilling or #buffer >= Config.Roll.BufferTarget then
 		return
 	end
+	refilling = true
 
 	local candidates = {}
-	for _ = 1, 10 do
+	for _ = 1, 15 do
 		table.insert(candidates, randomUserId())
 	end
 	local found = Scanner.LookupUsers(candidates)
@@ -158,6 +162,7 @@ local function refillTick()
 			offlineMode = true
 			warn("[ECI] Account lookups unavailable (offline Studio?) — switching to stub cards so you can still test.")
 		end
+		refilling = false
 		return
 	end
 	consecutiveLookupFailures = 0
@@ -165,7 +170,7 @@ local function refillTick()
 
 	local scanned = 0
 	for userId, basicInfo in found do
-		if scanned >= 3 then
+		if scanned >= 6 then
 			break
 		end
 		if not scanCache[userId] then
@@ -173,6 +178,7 @@ local function refillTick()
 			table.insert(buffer, scanAndStore(userId, basicInfo))
 		end
 	end
+	refilling = false
 end
 
 -- ===== offline stubs =======================================================
@@ -289,8 +295,8 @@ local function drawFromRarePool()
 end
 
 local function anyCachedCard()
-	for _, card in scanCache do
-		return card
+	if #cacheList > 0 then
+		return cacheList[math.random(1, #cacheList)]
 	end
 	return nil
 end
@@ -309,13 +315,17 @@ function CardPool.Draw(stats)
 	end
 
 	if #buffer > 0 then
-		return table.remove(buffer, 1)
+		local card = table.remove(buffer, 1)
+		if #buffer < Config.Roll.BufferTarget / 2 then
+			task.spawn(refillTick) -- start restocking before we run dry
+		end
+		return card
 	end
 
-	-- buffer dry: dupes are allowed, so serve anything we know
-	return drawFromRarePool()
-		or anyCachedCard()
-		or (offlineMode and makeStubCard())
+	-- buffer dry: restock urgently, and serve a random known card meanwhile
+	task.spawn(refillTick)
+	return anyCachedCard()
+		or drawFromRarePool()
 		or makeStubCard()
 end
 

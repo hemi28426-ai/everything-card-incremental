@@ -43,7 +43,7 @@ Config.Roll = {
 	BaseGodChance = 1 / 5000, -- chance a roll hits the legends list
 	BaseFreshInterval = 4.0, -- seconds between background account scans
 	MaxUserId = 8_500_000_000, -- rough top of the current id space
-	BufferTarget = 12, -- scanned cards kept ready per server
+	BufferTarget = 24, -- scanned cards kept ready per server
 }
 
 -- Random ids are sampled from these ranges (older accounts are rarer rolls).
@@ -61,6 +61,23 @@ Config.Economy = {
 	OfflineCapHours = 8,
 	OfflineFraction = 0.5, -- offline earnings run at half speed
 }
+
+-- The backpack caps how many UNIQUE cards you can hold (dupes stack free).
+-- Upgrades are bought with ROLLS, not coins, and cost 45% more each time.
+Config.Backpack = {
+	BaseCapacity = 20,
+	CapacityPerUpgrade = 5,
+	BaseCost = 30,
+	CostMult = 1.45,
+}
+
+function Config.GetBackpackCapacity(level)
+	return Config.Backpack.BaseCapacity + Config.Backpack.CapacityPerUpgrade * level
+end
+
+function Config.GetBackpackCost(level)
+	return math.floor(Config.Backpack.BaseCost * Config.Backpack.CostMult ^ level)
+end
 
 Config.AutosaveInterval = 60
 Config.LeaderboardRefreshInterval = 60
