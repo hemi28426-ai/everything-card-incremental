@@ -39,6 +39,7 @@ local DEFAULT_DATA = {
 	Equipped = {}, -- array of userId strings
 	AutoSell = {}, -- tierName -> true (auto-sell pulls of this tier)
 	AutoOn = true,
+	AutomationUnlocked = false,
 	LastSeen = 0,
 }
 

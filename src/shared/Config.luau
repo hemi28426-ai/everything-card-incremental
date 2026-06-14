@@ -174,28 +174,48 @@ local function rnode(def)
 	table.insert(R, def)
 end
 
--- row 1 (z -104)
-rnode({ Id = "carddouble", Name = "Card Doubler", Desc = "2x cards from every roll", Pos = { -45, -380 }, Cost = 3 })
-rnode({ Id = "goldinc", Name = "Golden Income", Desc = "x3 ALL coin earnings, forever", Pos = { -15, -380 }, Cost = 2, CostMult = 1.7, MaxLevel = nil })
-rnode({ Id = "eternalluck", Name = "Eternal Luck", Desc = "+10% rare pool chance, forever", Pos = { 15, -380 }, Cost = 2, CostMult = 1.8, MaxLevel = nil })
-rnode({ Id = "quickstart", Name = "Quick Start", Desc = "+10K starting coins after rebirth", Pos = { 45, -380 }, Cost = 1, CostMult = 2, MaxLevel = nil })
--- row 2 (z -120)
-rnode({ Id = "cardquad", Name = "Card Quadrupler", Desc = "2x cards AGAIN (4x total)", Pos = { -45, -396 }, Cost = 8, Requires = "carddouble" })
-rnode({ Id = "timelord", Name = "Time Lord", Desc = "Roll cooldown x0.6", Pos = { -15, -396 }, Cost = 4 })
-rnode({ Id = "bigbag", Name = "Bottomless Bag", Desc = "+30 backpack capacity", Pos = { 15, -396 }, Cost = 2, CostMult = 1.6, MaxLevel = nil })
-rnode({ Id = "dupegold", Name = "Dupe Tycoon", Desc = "+100% dupe & sell value", Pos = { 45, -396 }, Cost = 2, CostMult = 1.7, MaxLevel = nil })
--- row 3 (z -136)
-rnode({ Id = "overdrive", Name = "Scanner Overdrive", Desc = "Fresh accounts found 2x faster", Pos = { -45, -412 }, Cost = 3 })
-rnode({ Id = "chrono", Name = "Chrono Master", Desc = "Auto-roll cooldown x0.6", Pos = { -15, -412 }, Cost = 4, Requires = "timelord" })
-rnode({ Id = "slotmaster", Name = "Slot Master", Desc = "+1 equip slot", Pos = { 15, -412 }, Cost = 4, CostMult = 1.8, MaxLevel = nil })
-rnode({ Id = "luckyseven", Name = "Lucky Sevens", Desc = "Every 7th roll is Rare or better", Pos = { 45, -412 }, Cost = 6 })
--- row 4 (z -152)
-rnode({ Id = "tokenhoard", Name = "Token Hoarder", Desc = "+1 token from every rebirth", Pos = { -45, -428 }, Cost = 12, MaxLevel = 2, CostMult = 1 })
-rnode({ Id = "keeper", Name = "Legendary Keeper", Desc = "Legendary cards survive rebirth", Pos = { -15, -428 }, Cost = 10 })
-rnode({ Id = "godmagnet", Name = "God Magnet", Desc = "3x chance to roll a legend", Pos = { 15, -428 }, Cost = 5 })
-rnode({ Id = "dreamprofit", Name = "Dream Profits", Desc = "Offline earnings: full rate, 24h cap", Pos = { 45, -428 }, Cost = 5 })
+-- row 1 (z 5, on gold island centered at x=80)
+rnode({ Id = "goldinc", Name = "Golden Income", Desc = "x2 ALL coin earnings, forever", Pos = { 35, 5 }, Cost = 1, CostMult = 1.7, MaxLevel = nil, Effect = "CoinMult", Value = 2 })
+rnode({ Id = "carddouble", Name = "Card Doubler", Desc = "2x cards from every roll", Pos = { 65, 5 }, Cost = 3, Requires = "goldinc" })
+rnode({ Id = "eternalluck", Name = "Eternal Luck", Desc = "+10% rare pool chance, forever", Pos = { 95, 5 }, Cost = 2, CostMult = 1.8, MaxLevel = nil })
+rnode({ Id = "quickstart", Name = "Quick Start", Desc = "+10K starting coins after rebirth", Pos = { 125, 5 }, Cost = 1, CostMult = 2, MaxLevel = nil })
+-- row 2 (z 21)
+rnode({ Id = "cardquad", Name = "Card Quadrupler", Desc = "2x cards AGAIN (4x total)", Pos = { 35, 21 }, Cost = 8, Requires = "carddouble" })
+rnode({ Id = "timelord", Name = "Time Lord", Desc = "Roll cooldown x0.6", Pos = { 65, 21 }, Cost = 4 })
+rnode({ Id = "bigbag", Name = "Bottomless Bag", Desc = "+30 backpack capacity", Pos = { 95, 21 }, Cost = 2, CostMult = 1.6, MaxLevel = nil })
+rnode({ Id = "dupegold", Name = "Dupe Tycoon", Desc = "+100% dupe & sell value", Pos = { 125, 21 }, Cost = 2, CostMult = 1.7, MaxLevel = nil })
+-- row 3 (z 37)
+rnode({ Id = "overdrive", Name = "Scanner Overdrive", Desc = "Fresh accounts found 2x faster", Pos = { 35, 37 }, Cost = 3 })
+rnode({ Id = "chrono", Name = "Chrono Master", Desc = "Auto-roll cooldown x0.6", Pos = { 65, 37 }, Cost = 4, Requires = "timelord" })
+rnode({ Id = "slotmaster", Name = "Slot Master", Desc = "+1 equip slot", Pos = { 95, 37 }, Cost = 4, CostMult = 1.8, MaxLevel = nil })
+rnode({ Id = "luckyseven", Name = "Lucky Sevens", Desc = "Every 7th roll is Rare or better", Pos = { 125, 37 }, Cost = 6 })
+-- row 4 (z 53)
+rnode({ Id = "tokenhoard", Name = "Token Hoarder", Desc = "+1 token from every rebirth", Pos = { 35, 53 }, Cost = 12, MaxLevel = 2, CostMult = 1 })
+rnode({ Id = "keeper", Name = "Legendary Keeper", Desc = "Legendary cards survive rebirth", Pos = { 65, 53 }, Cost = 10, Requires = "chrono" })
+rnode({ Id = "godmagnet", Name = "God Magnet", Desc = "3x chance to roll a legend", Pos = { 95, 53 }, Cost = 5 })
+rnode({ Id = "dreamprofit", Name = "Dream Profits", Desc = "Offline earnings: full rate, 24h cap", Pos = { 125, 53 }, Cost = 5 })
+-- Automation unlock (costs 100 tokens, opens green island) - positioned between gold and green
+rnode({ Id = "automation", Name = "Automation Unlock", Desc = "Unlock the Automation Island", Pos = { 150, 53 }, Cost = 100, MaxLevel = 1, IsAutomationUnlock = true })
 
 Config.RebirthTree = R
+
+-- ===== Automation tree ======================================================
+-- Bought with Rebirth Tokens on the green island. Automation upgrades that
+-- auto-buy other upgrades. Require automation to be unlocked.
+local A = {}
+local function anode(def)
+	def.IsRebirth = true
+	def.Branch = "Automation"
+	def.IsAutomation = true
+	table.insert(A, def)
+end
+
+anode({ Id = "autoroll", Name = "Auto Roll Buyer", Desc = "Auto-buy roll speed upgrades (costs coins)", Pos = { 165, 5 }, Cost = 5, CostMult = 2.5, MaxLevel = nil, Effect = "AutoRollBuyer" })
+anode({ Id = "autocoin", Name = "Auto Coin Buyer", Desc = "Auto-buy coin upgrades (costs coins)", Pos = { 195, 5 }, Cost = 5, CostMult = 2.5, MaxLevel = nil, Effect = "AutoCoinBuyer" })
+anode({ Id = "autoslot", Name = "Auto Slot Buyer", Desc = "Auto-buy equip slot upgrades (costs coins)", Pos = { 225, 5 }, Cost = 5, CostMult = 2.5, MaxLevel = nil, Effect = "AutoSlotBuyer" })
+anode({ Id = "autoluck", Name = "Auto Luck Buyer", Desc = "Auto-buy luck upgrades (costs coins)", Pos = { 255, 5 }, Cost = 5, CostMult = 2.5, MaxLevel = nil, Effect = "AutoLuckBuyer" })
+
+Config.AutomationTree = A
 
 Config.NodeById = {}
 for _, treeNode in Config.Tree do
@@ -210,6 +230,12 @@ for _, treeNode in Config.RebirthTree do
 	end
 	Config.NodeById[treeNode.Id] = treeNode
 end
+for _, treeNode in Config.AutomationTree do
+	if treeNode.MaxLevel == nil and treeNode.CostMult == nil then
+		treeNode.MaxLevel = 1
+	end
+	Config.NodeById[treeNode.Id] = treeNode
+end
 
 Config.BranchColors = {
 	Rolling = Color3.fromRGB(140, 100, 255),
@@ -217,6 +243,7 @@ Config.BranchColors = {
 	Economy = Color3.fromRGB(255, 190, 60),
 	Endgame = Color3.fromRGB(230, 60, 200),
 	Rebirth = Color3.fromRGB(255, 215, 60),
+	Automation = Color3.fromRGB(100, 200, 100),
 }
 
 function Config.GetNodeCost(treeNode, level)

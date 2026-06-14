@@ -662,10 +662,18 @@ function UI:BuildPadSurfaces()
 
 	-- the golden island stays hidden (and unwalkable) until your first rebirth
 	self.GoldenParts = {}
+	self.GreenParts = {}
 	for _, partName in { "GoldenIsland", "GoldenPortal", "ReturnPortal" } do
 		local part = tree:FindFirstChild(partName)
 		if part and part:IsA("BasePart") then
 			table.insert(self.GoldenParts, part)
+		end
+	end
+
+	for _, partName in { "GreenIsland", "GreenPortal" } do
+		local part = tree:FindFirstChild(partName)
+		if part and part:IsA("BasePart") then
+			table.insert(self.GreenParts, part)
 		end
 	end
 
@@ -854,6 +862,7 @@ end
 function UI:UpdatePads()
 	local state = self.State
 	local goldUnlocked = state.Rebirths >= 1
+	local greenUnlocked = state.AutomationUnlocked
 
 	-- reveal/hide the golden island itself (per-player, local only)
 	if self.GoldenParts then
@@ -868,12 +877,26 @@ function UI:UpdatePads()
 		end
 	end
 
+	-- reveal/hide the green island (automation unlocks it)
+	if self.GreenParts then
+		for _, part in self.GreenParts do
+			part.LocalTransparencyModifier = if greenUnlocked then 0 else 1
+			part.CanCollide = greenUnlocked
+			for _, descendant in part:GetDescendants() do
+				if descendant:IsA("SurfaceGui") then
+					descendant.Enabled = greenUnlocked
+				end
+			end
+		end
+	end
+
 	for nodeId, entry in self.Pads do
 		local treeNode = Config.NodeById[nodeId]
 		local levels = if treeNode.IsRebirth then state.RebirthUpgrades else state.Upgrades
 		local level = levels[nodeId] or 0
 		local unlocked = (not treeNode.Requires or (levels[treeNode.Requires] or 0) >= 1)
 			and (not treeNode.IsRebirth or goldUnlocked)
+			and (not treeNode.IsAutomation or greenUnlocked)
 
 		setPadVisible(entry, unlocked)
 		if not unlocked then

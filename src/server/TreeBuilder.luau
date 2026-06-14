@@ -14,8 +14,10 @@ local TreeBuilder = {}
 local PAD_SIZE = Vector3.new(8, 1, 8)
 local PAD_Y = 0.5
 
--- the golden island lives far out in the void, reachable only by portal
-local GOLD_CENTER_Z = -400
+-- All three islands are connected in a row on the main z-line
+local RED_CENTER_X = 0 -- MainIsland center
+local GOLD_CENTER_X = 80 -- GoldenIsland center (to the right of main)
+local GREEN_CENTER_X = 210 -- GreenIsland center (to the right of gold)
 
 local function makePart(props)
 	local part = Instance.new("Part")
@@ -161,13 +163,13 @@ local function buildTv(folder)
 	return ticker
 end
 
--- Both islands are built here at runtime so the layout is always correct
--- no matter how the project is loaded (fresh file, Rojo sync, old place).
+-- All three islands are built at runtime so they can have per-player visibility
+-- and fade-in effects when unlocked.
 local function buildIslands(folder)
 	local main = makePart({
 		Name = "MainIsland",
 		Size = Vector3.new(164, 8, 144),
-		CFrame = CFrame.new(0, -4, 5),
+		CFrame = CFrame.new(RED_CENTER_X, -4, 5),
 		Color = Color3.fromRGB(181, 166, 219),
 		Material = Enum.Material.Plastic,
 		Parent = folder,
@@ -178,13 +180,28 @@ local function buildIslands(folder)
 	local gold = makePart({
 		Name = "GoldenIsland",
 		Size = Vector3.new(130, 8, 120),
-		CFrame = CFrame.new(0, -4, GOLD_CENTER_Z),
+		CFrame = CFrame.new(GOLD_CENTER_X, -4, 5),
 		Color = Color3.fromRGB(242, 199, 64),
 		Material = Enum.Material.Plastic,
 		Parent = folder,
 	})
 	gold.TopSurface = Enum.SurfaceType.Studs
 	gold.Locked = true
+	gold:SetAttribute("IslandName", "Gold")
+	gold.Transparency = 1
+
+	local green = makePart({
+		Name = "GreenIsland",
+		Size = Vector3.new(130, 8, 120),
+		CFrame = CFrame.new(GREEN_CENTER_X, -4, 5),
+		Color = Color3.fromRGB(100, 200, 100),
+		Material = Enum.Material.Plastic,
+		Parent = folder,
+	})
+	green.TopSurface = Enum.SurfaceType.Studs
+	green.Locked = true
+	green:SetAttribute("IslandName", "Green")
+	green.Transparency = 1
 end
 
 -- The rebirth altar lives on the MAIN island's south edge (you must be able
@@ -238,9 +255,9 @@ local function buildPortal(folder, name, position, labelText)
 end
 
 -- Builds everything. onBuy(player, nodeId) is called when a pad prompt
--- fires; getRebirths(player) gates the golden portal server-side.
--- Returns the TV ticker label so the server can announce big pulls on it.
-function TreeBuilder.Build(onBuy, getRebirths)
+-- fires; getRebirths(player) gates the golden portal, getAutomationUnlocked(player)
+-- gates the green portal. Returns the TV ticker label so the server can announce big pulls.
+function TreeBuilder.Build(onBuy, getRebirths, getAutomationUnlocked)
 	-- clear world pieces from any older version of the game, no matter how
 	-- this got loaded (old file, Rojo sync into an existing place, etc.)
 	for _, legacyName in { "Baseplate", "SpawnPlaza", "MainIsland", "GoldenIsland", "RebirthBridge", "UpgradeTree" } do
@@ -270,24 +287,33 @@ function TreeBuilder.Build(onBuy, getRebirths)
 		end
 	end
 
+	for _, treeNode in Config.AutomationTree do
+		buildPad(treeNode, folder, onBuy)
+		local parent = treeNode.Requires and Config.NodeById[treeNode.Requires]
+		if parent then
+			buildPath(parent, treeNode, folder)
+		end
+	end
+
 	buildAltar(folder)
 
-	-- portals between the islands (golden side is rebirth-gated)
-	local toGold = buildPortal(folder, "GoldenPortal", Vector3.new(12, 0.3, -62), "⭐ GOLDEN ISLAND")
-	local toMain = buildPortal(folder, "ReturnPortal", Vector3.new(0, 0.3, GOLD_CENTER_Z + 54), "↩ BACK")
+	-- portals between islands (gated by progression)
+	local toGold = buildPortal(folder, "GoldenPortal", Vector3.new(GOLD_CENTER_X - 50, 0.3, 5), "⭐ GOLDEN ISLAND")
+	local toGreen = buildPortal(folder, "GreenPortal", Vector3.new(GREEN_CENTER_X - 50, 0.3, 5), "🟢 AUTOMATION ISLAND")
+	local toRed = buildPortal(folder, "ReturnPortal", Vector3.new(RED_CENTER_X + 50, 0.3, 5), "↩ BACK")
 
 	local teleportCooldown = {}
 	Players.PlayerRemoving:Connect(function(player)
 		teleportCooldown[player] = nil
 	end)
-	local function makeTeleporter(portal, destination, needsRebirth)
+	local function makeTeleporter(portal, destination, gateCheck)
 		portal.Touched:Connect(function(hit)
 			local character = hit.Parent
 			local player = character and Players:GetPlayerFromCharacter(character)
 			if not player then
 				return
 			end
-			if needsRebirth and getRebirths(player) < 1 then
+			if gateCheck and not gateCheck(player) then
 				return
 			end
 			local now = os.clock()
@@ -298,8 +324,16 @@ function TreeBuilder.Build(onBuy, getRebirths)
 			character:PivotTo(CFrame.new(destination))
 		end)
 	end
-	makeTeleporter(toGold, Vector3.new(0, 4, GOLD_CENTER_Z + 44), true)
-	makeTeleporter(toMain, Vector3.new(0, 4, -50), false)
+	-- Red to Gold: requires at least 1 rebirth
+	makeTeleporter(toGold, Vector3.new(GOLD_CENTER_X, 4, 5), function(player)
+		return getRebirths(player) >= 1
+	end)
+	-- Gold to Green: requires automation unlock
+	makeTeleporter(toGreen, Vector3.new(GREEN_CENTER_X, 4, 5), function(player)
+		return getAutomationUnlocked and getAutomationUnlocked(player)
+	end)
+	-- Red/Green back portals: always available
+	makeTeleporter(toRed, Vector3.new(RED_CENTER_X, 4, 5), nil)
 
 	local ticker = buildTv(folder)
 	folder.Parent = workspace

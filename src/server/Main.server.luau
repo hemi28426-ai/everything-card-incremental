@@ -100,6 +100,7 @@ local function buildState(session, includeCards)
 		RebirthUpgrades = data.RebirthUpgrades,
 		Equipped = data.Equipped,
 		AutoOn = data.AutoOn,
+		AutomationUnlocked = data.AutomationUnlocked,
 		Stats = session.Stats,
 		CoinsPerSec = computeRate(data, session.Stats),
 		Rebirths = data.Rebirths,
@@ -371,6 +372,12 @@ local function onBuyUpgrade(player, nodeId)
 	end
 
 	levels[nodeId] = level + 1
+
+	-- Handle special upgrade effects
+	if nodeId == "automation" then
+		data.AutomationUnlocked = true
+	end
+
 	session.Stats = Config.ComputeStats(data.Upgrades, data.RebirthUpgrades)
 	pushState(player, false)
 end
@@ -607,6 +614,9 @@ end)
 tvTicker = TreeBuilder.Build(onBuyUpgrade, function(player)
 	local session = sessions[player]
 	return if session then session.Data.Rebirths else 0
+end, function(player)
+	local session = sessions[player]
+	return if session then session.Data.AutomationUnlocked else false
 end)
 Leaderboard.Start()
 
