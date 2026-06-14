@@ -50,17 +50,6 @@ local OFFLINE_TIER_WEIGHTS = {
 -- ===== random account ids ==================================================
 
 local function randomUserId()
-	local totalWeight = 0
-	for _, range in Config.IdRanges do
-		totalWeight += range.Weight
-	end
-	local pick = math.random() * totalWeight
-	for _, range in Config.IdRanges do
-		pick -= range.Weight
-		if pick <= 0 then
-			return math.floor(range.Min + math.random() * (range.Max - range.Min))
-		end
-	end
 	return math.floor(math.random() * Config.Roll.MaxUserId) + 1
 end
 
