@@ -205,7 +205,8 @@ local function performRoll(player, isAuto)
 	if isAuto and not stats.AutoMulti then
 		count = 1
 	end
-	count *= stats.CardOutputMult -- golden tree card doubler/quadrupler
+	count = count * stats.CardOutputMult + stats.CardBonus -- golden tree doublers + flat bonus
+	count = math.floor(count)
 
 	local results = {}
 	for _ = 1, count do
@@ -431,11 +432,9 @@ unequipRemote.OnServerEvent:Connect(function(player, userIdStr)
 	end
 end)
 
-equipBestRemote.OnServerEvent:Connect(function(player)
-	local session = sessions[player]
-	if not session then
-		return
-	end
+-- Equip the highest-boost cards into every available slot. Returns true if the
+-- equipped set actually changed (so automation can avoid needless state pushes).
+local function equipBest(session)
 	local data = session.Data
 	local owned = {}
 	for userIdStr, card in data.Cards do
@@ -444,10 +443,29 @@ equipBestRemote.OnServerEvent:Connect(function(player)
 	table.sort(owned, function(a, b)
 		return a.Boost > b.Boost
 	end)
-	data.Equipped = {}
+	local newEquipped = {}
 	for i = 1, math.min(session.Stats.EquipSlots, #owned) do
-		table.insert(data.Equipped, owned[i].Key)
+		table.insert(newEquipped, owned[i].Key)
 	end
+	local changed = #newEquipped ~= #data.Equipped
+	if not changed then
+		for i, key in newEquipped do
+			if data.Equipped[i] ~= key then
+				changed = true
+				break
+			end
+		end
+	end
+	data.Equipped = newEquipped
+	return changed
+end
+
+equipBestRemote.OnServerEvent:Connect(function(player)
+	local session = sessions[player]
+	if not session then
+		return
+	end
+	equipBest(session)
 	pushState(player, false)
 end)
 
@@ -462,6 +480,20 @@ local function sellDupesFor(data, stats, userIdStr)
 	return math.floor(tier.SellValue * dupes * stats.DupeMult)
 end
 
+-- Sell every duplicate the player owns; returns coins earned.
+local function sellAllDupes(session)
+	local data = session.Data
+	local earned = 0
+	for userIdStr in data.Cards do
+		earned += sellDupesFor(data, session.Stats, userIdStr)
+	end
+	if earned > 0 then
+		data.Coins += earned
+		data.TotalEarned += earned
+	end
+	return earned
+end
+
 sellDupesRemote.OnServerEvent:Connect(function(player, target)
 	local session = sessions[player]
 	if not session or type(target) ~= "string" then
@@ -470,15 +502,15 @@ sellDupesRemote.OnServerEvent:Connect(function(player, target)
 	local data = session.Data
 	local earned = 0
 	if target == "ALL" then
-		for userIdStr in data.Cards do
-			earned += sellDupesFor(data, session.Stats, userIdStr)
-		end
+		earned = sellAllDupes(session)
 	else
 		earned = sellDupesFor(data, session.Stats, target)
+		if earned > 0 then
+			data.Coins += earned
+			data.TotalEarned += earned
+		end
 	end
 	if earned > 0 then
-		data.Coins += earned
-		data.TotalEarned += earned
 		pushState(player, true)
 	end
 end)
@@ -529,15 +561,12 @@ end)
 -- Rebirth: needs a Legendary+ card and enough coins for at least 1 token.
 -- Wipes coins, the purple tree, and all cards below the keep tier
 -- (Mythic, or Legendary with the Keeper upgrade). Tokens scale with coins.
-rebirthRemote.OnServerEvent:Connect(function(player)
-	local session = sessions[player]
-	if not session then
-		return
-	end
+-- Returns the number of tokens earned (0 if the rebirth wasn't allowed).
+local function doRebirth(player, session)
 	local data = session.Data
 	local tokens = Config.GetRebirthTokens(data.Coins)
 	if tokens < 1 or not hasLegendaryPlus(data) then
-		return
+		return 0
 	end
 	tokens += session.Stats.BonusTokens
 
@@ -564,23 +593,143 @@ rebirthRemote.OnServerEvent:Connect(function(player)
 	data.Coins = session.Stats.StartCoins
 
 	announce(("🌟 %s rebirthed and earned %d token%s!"):format(player.Name, tokens, tokens == 1 and "" or "s"))
-	pushState(player, true)
+	return tokens
+end
+
+rebirthRemote.OnServerEvent:Connect(function(player)
+	local session = sessions[player]
+	if not session then
+		return
+	end
+	if doRebirth(player, session) > 0 then
+		pushState(player, true)
+	end
 end)
+
+-- Buy one backpack expansion (paid in rolls). Returns true on success.
+local function buyBackpack(session)
+	local data = session.Data
+	local cost = Config.GetBackpackCost(data.BackpackLevel)
+	if data.RollsBalance < cost then
+		return false
+	end
+	data.RollsBalance -= cost
+	data.BackpackLevel += 1
+	return true
+end
 
 backpackRemote.OnServerEvent:Connect(function(player)
 	local session = sessions[player]
 	if not session then
 		return
 	end
-	local data = session.Data
-	local cost = Config.GetBackpackCost(data.BackpackLevel)
-	if data.RollsBalance < cost then
-		return
+	if buyBackpack(session) then
+		pushState(player, false)
 	end
-	data.RollsBalance -= cost
-	data.BackpackLevel += 1
-	pushState(player, false)
 end)
+
+-- ===== automation (green island) ==========================================
+
+-- Which purple-tree upgrades each auto-buyer category covers.
+local AUTOBUY_MATCHERS = {
+	rollspeed = function(node)
+		return node.Effect == "RollSpeed" or node.Effect == "InfHaste"
+	end,
+	multi = function(node)
+		return node.Effect == "MultiRoll" or node.Effect == "AutoUnlock"
+			or node.Effect == "AutoSpeed" or node.Effect == "AutoMulti"
+	end,
+	coin = function(node)
+		return node.Effect == "CoinMult" or node.Effect == "InfCoin"
+	end,
+	slot = function(node)
+		return node.Effect == "Slot"
+	end,
+	dupe = function(node)
+		return node.Effect == "DupeValue"
+	end,
+	luck = function(node)
+		return node.Effect == "Luck" or node.Effect == "InfLuck" or node.Effect == "GodHunter"
+	end,
+	fresh = function(node)
+		return node.Effect == "FreshScan"
+	end,
+	endgame = function(node)
+		return node.Branch == "Endgame"
+	end,
+}
+
+-- Buy the single cheapest affordable purple-tree node matching `matcher`
+-- (respecting prerequisites and max levels). Returns true if something bought.
+local function autoBuyCategory(session, matcher)
+	local data = session.Data
+	local bestNode, bestCost = nil, nil
+	for _, node in Config.Tree do
+		if matcher(node) then
+			local level = data.Upgrades[node.Id] or 0
+			local maxedOut = node.MaxLevel and level >= node.MaxLevel
+			local prereqMet = not node.Requires or (data.Upgrades[node.Requires] or 0) >= 1
+			if not maxedOut and prereqMet then
+				local cost = Config.GetNodeCost(node, level)
+				if data.Coins >= cost and (not bestCost or cost < bestCost) then
+					bestNode, bestCost = node, cost
+				end
+			end
+		end
+	end
+	if bestNode then
+		data.Coins -= bestCost
+		data.Upgrades[bestNode.Id] = (data.Upgrades[bestNode.Id] or 0) + 1
+		return true
+	end
+	return false
+end
+
+-- Run one automation pass for a player. Returns true if anything changed.
+local function runAutomation(player, session)
+	local stats = session.Stats
+	if not stats.AutoCore then
+		return false
+	end
+	local changed = false
+
+	for category in stats.AutoBuy do
+		if category == "backpack" then
+			if buyBackpack(session) then
+				changed = true
+			end
+		else
+			local matcher = AUTOBUY_MATCHERS[category]
+			if matcher and autoBuyCategory(session, matcher) then
+				changed = true
+			end
+		end
+	end
+
+	if changed then
+		session.Stats = Config.ComputeStats(session.Data.Upgrades, session.Data.RebirthUpgrades)
+		stats = session.Stats
+	end
+
+	if stats.AutoSellUnlocked and sellAllDupes(session) > 0 then
+		changed = true
+	end
+	if stats.AutoEquipUnlocked and equipBest(session) then
+		changed = true
+	end
+	if stats.AutoRebirthUnlocked then
+		-- only rebirth once it would beat the threshold (which doubles each time)
+		session.AutoRebirthAt = session.AutoRebirthAt or 10
+		if Config.GetRebirthTokens(session.Data.Coins) >= session.AutoRebirthAt and hasLegendaryPlus(session.Data) then
+			if doRebirth(player, session) > 0 then
+				session.AutoRebirthAt *= 2
+				changed = true
+			end
+		end
+	end
+
+	return changed
+end
 
 -- ===== loops ===============================================================
 
@@ -607,6 +756,24 @@ task.spawn(function()
 		for player, session in sessions do
 			if session.Stats.AutoUnlocked and session.Data.AutoOn then
 				task.spawn(performRoll, player, true)
+			end
+		end
+	end
+end)
+
+-- automation heartbeat (green island). Runs every 0.5s; each player's pace is
+-- gated by their own cooldown, which Automation Haste shortens.
+task.spawn(function()
+	while true do
+		task.wait(0.5)
+		local now = os.clock()
+		for player, session in sessions do
+			if session.Stats.AutoCore and now >= (session.NextAutomationAt or 0) then
+				session.NextAutomationAt = now + 3 / (1 + session.Stats.AutoHaste)
+				if runAutomation(player, session) then
+					session.CardsDirty = true
+					pushState(player, false)
+				end
 			end
 		end
 	end

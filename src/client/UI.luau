@@ -720,7 +720,9 @@ function UI:BuildPadSurfaces()
 		}
 	end
 
-	-- the golden island stays hidden (and unwalkable) until your first rebirth
+	-- the gold island stays hidden (and unwalkable) until your first rebirth;
+	-- the green island until you buy Automation Unlock. Hidden immediately so
+	-- they're invisible from the very first frame, before any state arrives.
 	self.GoldenParts = {}
 	self.GreenParts = {}
 	for _, partName in { "GoldenIsland", "GoldenPortal", "ReturnPortal" } do
@@ -730,11 +732,21 @@ function UI:BuildPadSurfaces()
 		end
 	end
 
-	for _, partName in { "GreenIsland", "GreenPortal" } do
+	for _, partName in { "GreenIsland", "GreenPortal", "ReturnPortalGreen" } do
 		local part = tree:FindFirstChild(partName)
 		if part and part:IsA("BasePart") then
 			table.insert(self.GreenParts, part)
 		end
+	end
+
+	-- hide both groups up front (state-driven reveal happens in UpdatePads)
+	for _, part in self.GoldenParts do
+		part.LocalTransparencyModifier = 1
+		part.CanCollide = false
+	end
+	for _, part in self.GreenParts do
+		part.LocalTransparencyModifier = 1
+		part.CanCollide = false
 	end
 
 	-- the rebirth altar: live progress text + client-side confirm
@@ -919,36 +931,45 @@ local function setPadVisible(entry, visible)
 	entry.Gui.Enabled = visible
 end
 
+-- Show or hide an island's parts. `flag` tracks whether we've already revealed
+-- it, so the fade-in only plays once (on the transition from locked to unlocked).
+function UI:RevealIsland(parts, unlocked, flag)
+	if not parts then
+		return
+	end
+	local firstReveal = unlocked and not self[flag]
+	for _, part in parts do
+		part.CanCollide = unlocked
+		for _, descendant in part:GetDescendants() do
+			if descendant:IsA("SurfaceGui") then
+				descendant.Enabled = unlocked
+			end
+		end
+		if not unlocked then
+			part.LocalTransparencyModifier = 1
+		elseif firstReveal then
+			part.LocalTransparencyModifier = 1
+			TweenService:Create(part, TweenInfo.new(1.2, Enum.EasingStyle.Quad), {
+				LocalTransparencyModifier = 0,
+			}):Play()
+		else
+			part.LocalTransparencyModifier = 0
+		end
+	end
+	if unlocked then
+		self[flag] = true
+	end
+end
+
 function UI:UpdatePads()
 	local state = self.State
 	local goldUnlocked = state.Rebirths >= 1
 	local greenUnlocked = state.AutomationUnlocked
 
-	-- reveal/hide the golden island itself (per-player, local only)
-	if self.GoldenParts then
-		for _, part in self.GoldenParts do
-			part.LocalTransparencyModifier = if goldUnlocked then 0 else 1
-			part.CanCollide = goldUnlocked
-			for _, descendant in part:GetDescendants() do
-				if descendant:IsA("SurfaceGui") then
-					descendant.Enabled = goldUnlocked
-				end
-			end
-		end
-	end
-
-	-- reveal/hide the green island (automation unlocks it)
-	if self.GreenParts then
-		for _, part in self.GreenParts do
-			part.LocalTransparencyModifier = if greenUnlocked then 0 else 1
-			part.CanCollide = greenUnlocked
-			for _, descendant in part:GetDescendants() do
-				if descendant:IsA("SurfaceGui") then
-					descendant.Enabled = greenUnlocked
-				end
-			end
-		end
-	end
+	-- reveal/hide the gold & green islands (per-player, local only). The first
+	-- time an island unlocks we fade it in; after that we just keep it shown.
+	self:RevealIsland(self.GoldenParts, goldUnlocked, "GoldShown")
+	self:RevealIsland(self.GreenParts, greenUnlocked, "GreenShown")
 
 	for nodeId, entry in self.Pads do
 		local treeNode = Config.NodeById[nodeId]
@@ -1071,7 +1092,7 @@ function UI:Update(state)
 
 	self.TokenLabel.Text = ("⭐ Tokens: %s  •  Rebirths: %s"):format(Format(state.RebirthTokens), Format(state.Rebirths))
 
-	local cardsPerRoll = state.Stats.MultiRoll * state.Stats.CardOutputMult
+	local cardsPerRoll = math.floor(state.Stats.MultiRoll * state.Stats.CardOutputMult + (state.Stats.CardBonus or 0))
 	self.MultiBadge.Visible = cardsPerRoll > 1
 	self.MultiBadge.Text = "x" .. cardsPerRoll
 

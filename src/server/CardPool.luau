@@ -1,12 +1,16 @@
--- Keeps rolls instant and the card supply endless:
---   * a buffer of freshly scanned random accounts, refilled in the background
---   * a global pool (DataStore) of every Rare+ account any server discovered,
---     shared across all servers — luck upgrades draw from here
---   * the legends list (resolved from usernames at startup) for god rolls
---   * an offline stub mode so the game is fully testable in Studio
+-- The roll engine. Every roll is an INDEPENDENT, uniformly-random account id
+-- drawn from the whole 1..MaxUserId space, so it's truly "1 in 8.5 billion" for
+-- every player, and duplicates essentially never happen (a collision in 8.5B is
+-- astronomically unlikely). To keep rolls instant we keep a background buffer of
+-- freshly-scanned random accounts; a roll just consumes one. Nothing is ever
+-- served from a cache or a shared pool, which is what used to cause repeats.
+--
+--   * buffer: fresh random accounts, refilled in the background
+--   * legends: the configured famous accounts (resolved at startup) for god rolls
+--   * luck: extra fresh draws per roll, keeping the rarest (still all unique)
+--   * offline stub mode: unique fake cards so the game is testable in Studio
 --     with no internet APIs at all
 
-local DataStoreService = game:GetService("DataStoreService")
 local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 
@@ -16,29 +20,16 @@ local Scanner = require(script.Parent:WaitForChild("Scanner"))
 
 local CardPool = {}
 
-local POOL_KEY = "RarePool_v1"
-local POOL_CAP = 300
-local POOL_READ_INTERVAL = 120
-local POOL_FLUSH_INTERVAL = 60
 local OFFLINE_AFTER_FAILURES = 3
 
-local poolStore = nil
-pcall(function()
-	poolStore = DataStoreService:GetDataStore("ECISharedPool_v1")
-end)
-
-local buffer = {} -- scanned cards ready to be rolled
-local scanCache = {} -- userId -> card (everything scanned this server session)
-local cacheList = {} -- same cards as an array, for fast random fallback picks
+local buffer = {} -- fresh scanned accounts ready to be rolled (each id unique)
+local scanCache = {} -- userId -> true: every id scanned this session (dedup)
 local refilling = false
-local rarePool = {} -- tierName -> {card, ...} (merged from the global store)
-local pendingSubmits = {} -- discovered Rare+ cards not yet flushed to the store
 local legendCards = {}
 local consecutiveLookupFailures = 0
 local offlineMode = false
 local statsProvider = nil -- set by Init; returns the best FreshInterval online
 
-local TIER_POOL_WEIGHTS = { Rare = 70, Legendary = 25, Mythic = 5 }
 local OFFLINE_TIER_WEIGHTS = {
 	{ Tier = "Common", Weight = 70 },
 	{ Tier = "Uncommon", Weight = 20 },
@@ -49,88 +40,21 @@ local OFFLINE_TIER_WEIGHTS = {
 
 -- ===== random account ids ==================================================
 
+-- A flat, uniform pick across the entire id space: truly 1 in MaxUserId.
 local function randomUserId()
 	return math.floor(math.random() * Config.Roll.MaxUserId) + 1
 end
 
--- ===== global pool (DataStore) =============================================
-
-local function rememberPoolCard(card)
-	local list = rarePool[card.Tier]
-	if not list then
-		list = {}
-		rarePool[card.Tier] = list
-	end
-	for _, existing in list do
-		if existing.UserId == card.UserId then
-			return
-		end
-	end
-	table.insert(list, card)
-end
-
-local function readGlobalPool()
-	if not poolStore then
-		return
-	end
-	pcall(function()
-		local stored = poolStore:GetAsync(POOL_KEY)
-		if type(stored) == "table" and type(stored.Cards) == "table" then
-			for _, card in stored.Cards do
-				if type(card) == "table" and card.UserId and card.Tier then
-					rememberPoolCard(card)
-				end
-			end
-		end
-	end)
-end
-
-local function flushSubmits()
-	if not poolStore or #pendingSubmits == 0 then
-		return
-	end
-	local toAdd = pendingSubmits
-	pendingSubmits = {}
-	pcall(function()
-		poolStore:UpdateAsync(POOL_KEY, function(stored)
-			if type(stored) ~= "table" or type(stored.Cards) ~= "table" then
-				stored = { Cards = {} }
-			end
-			local seen = {}
-			for _, card in stored.Cards do
-				if type(card) == "table" and card.UserId then
-					seen[card.UserId] = true
-				end
-			end
-			for _, card in toAdd do
-				if not seen[card.UserId] then
-					table.insert(stored.Cards, card)
-					seen[card.UserId] = true
-				end
-			end
-			while #stored.Cards > POOL_CAP do
-				table.remove(stored.Cards, math.random(1, #stored.Cards))
-			end
-			return stored
-		end)
-	end)
-end
-
-local function submitIfRare(card)
+local function tierIndex(card)
 	local tier = Config.TierByName[card.Tier]
-	if tier and tier.Index >= Config.TierByName.Rare.Index and tier.Index < Config.TierByName.God.Index then
-		rememberPoolCard(card)
-		table.insert(pendingSubmits, card)
-	end
+	return tier and tier.Index or 0
 end
 
 -- ===== scanning ============================================================
 
 local function scanAndStore(userId, basicInfo)
 	local card = Scanner.Scan(userId, basicInfo)
-	scanCache[userId] = card
-	table.insert(cacheList, card)
-	submitIfRare(card)
+	scanCache[userId] = true
 	return card
 end
 
@@ -141,7 +65,7 @@ local function refillTick()
 	refilling = true
 
 	local candidates = {}
-	for _ = 1, 15 do
+	for _ = 1, 25 do
 		table.insert(candidates, randomUserId())
 	end
 	local found = Scanner.LookupUsers(candidates)
@@ -159,7 +83,7 @@ local function refillTick()
 
 	local scanned = 0
 	for userId, basicInfo in found do
-		if scanned >= 6 then
+		if scanned >= 12 then
 			break
 		end
 		if not scanCache[userId] then
@@ -220,21 +144,6 @@ function CardPool.Init(getBestFreshInterval)
 	end)
 
 	task.spawn(function()
-		readGlobalPool()
-		while true do
-			task.wait(POOL_READ_INTERVAL)
-			readGlobalPool()
-		end
-	end)
-
-	task.spawn(function()
-		while true do
-			task.wait(POOL_FLUSH_INTERVAL)
-			flushSubmits()
-		end
-	end)
-
-	task.spawn(function()
 		while true do
 			local interval = Config.Roll.BaseFreshInterval
 			if statsProvider then
@@ -255,55 +164,13 @@ function CardPool.CapturePlayer(player)
 		local found = Scanner.LookupUsers({ player.UserId })
 		local basicInfo = found and found[player.UserId]
 		if basicInfo then
-			scanAndStore(player.UserId, basicInfo)
+			table.insert(buffer, scanAndStore(player.UserId, basicInfo))
 		end
 	end)
 end
 
-local function drawFromRarePool()
-	local available = {}
-	local totalWeight = 0
-	for tierName, weight in TIER_POOL_WEIGHTS do
-		local list = rarePool[tierName]
-		if list and #list > 0 then
-			table.insert(available, { List = list, Weight = weight })
-			totalWeight += weight
-		end
-	end
-	if totalWeight == 0 then
-		return nil
-	end
-	local pick = math.random() * totalWeight
-	for _, entry in available do
-		pick -= entry.Weight
-		if pick <= 0 then
-			return entry.List[math.random(1, #entry.List)]
-		end
-	end
-	return nil
-end
-
-local function anyCachedCard()
-	if #cacheList > 0 then
-		return cacheList[math.random(1, #cacheList)]
-	end
-	return nil
-end
-
--- Draw one card for a roll. Never fails. forcePool (Lucky Sevens) makes the
--- roll come from the discovered Rare+ pool when it has anything in it.
-function CardPool.Draw(stats, forcePool)
-	if #legendCards > 0 and math.random() < stats.GodChance then
-		return legendCards[math.random(1, #legendCards)]
-	end
-
-	if forcePool or math.random() < stats.LuckChance then
-		local poolCard = drawFromRarePool()
-		if poolCard then
-			return poolCard
-		end
-	end
-
+-- Take one fresh account from the buffer (each is a unique random id).
+local function popBuffer()
 	if #buffer > 0 then
 		local card = table.remove(buffer, 1)
 		if #buffer < Config.Roll.BufferTarget / 2 then
@@ -311,12 +178,89 @@ function CardPool.Draw(stats, forcePool)
 		end
 		return card
 	end
+	return nil
+end
 
-	-- buffer dry: restock urgently, and serve a random known card meanwhile
+-- A guaranteed fresh card. Online, if the buffer is empty, it scans one new
+-- random account right now (this yields briefly, but only when fully drained).
+-- Offline, it returns a unique stub.
+local function freshFallback()
 	task.spawn(refillTick)
-	return anyCachedCard()
-		or drawFromRarePool()
-		or makeStubCard()
+	if not offlineMode then
+		local userId = randomUserId()
+		if not scanCache[userId] then
+			local found = Scanner.LookupUsers({ userId })
+			local basicInfo = found and found[userId]
+			if basicInfo then
+				return scanAndStore(userId, basicInfo)
+			end
+		end
+	end
+	return makeStubCard()
+end
+
+-- Returns a fresh, unique card. `allowYield` lets it scan on demand when the
+-- buffer is empty; extra (luck) attempts pass false so they never block.
+local function drawOneFresh(allowYield)
+	local card = popBuffer()
+	if card then
+		return card
+	end
+	if offlineMode then
+		return makeStubCard()
+	end
+	if allowYield then
+		return freshFallback()
+	end
+	return nil
+end
+
+-- Promote a card to at least `tierName` (used by the Lucky Sevens pity). The
+-- account stays the same real account (same id), it's just graded up.
+local function promoteTier(card, tierName)
+	local tier = Config.TierByName[tierName]
+	if not tier or tierIndex(card) >= tier.Index then
+		return card
+	end
+	return {
+		UserId = card.UserId,
+		Name = card.Name,
+		DisplayName = card.DisplayName,
+		Tier = tier.Name,
+		Boost = tier.Boost,
+		Traits = card.Traits,
+		Flavor = card.Flavor,
+	}
+end
+
+-- Draw one card for a roll. Never fails, never duplicates (except legends, which
+-- are intentionally a fixed set). Luck adds extra fresh draws and keeps the
+-- rarest of them. forcePool (Lucky Sevens) guarantees at least a Rare.
+function CardPool.Draw(stats, forcePool)
+	-- god roll: a fixed famous account (the only intentional "repeat")
+	if #legendCards > 0 and math.random() < stats.GodChance then
+		return legendCards[math.random(1, #legendCards)]
+	end
+
+	-- luck = "best of N" fresh, independent, uniformly-random accounts
+	local attempts = 1 + math.min(math.floor((stats.LuckChance or 0) / 0.15), 6)
+	local best = nil
+	for index = 1, attempts do
+		local card = drawOneFresh(index == 1)
+		if card then
+			if not best or tierIndex(card) > tierIndex(best) then
+				best = card
+			end
+		end
+	end
+	if not best then
+		best = makeStubCard()
+	end
+
+	if forcePool then
+		best = promoteTier(best, "Rare")
+	end
+	return best
 end
 
 return CardPool

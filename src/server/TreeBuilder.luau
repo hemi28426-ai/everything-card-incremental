@@ -14,10 +14,13 @@ local TreeBuilder = {}
 local PAD_SIZE = Vector3.new(8, 1, 8)
 local PAD_Y = 0.5
 
--- All three islands are connected in a row on the main z-line
-local RED_CENTER_X = 0 -- MainIsland center
-local GOLD_CENTER_X = 80 -- GoldenIsland center (to the right of main)
-local GREEN_CENTER_X = 210 -- GreenIsland center (to the right of gold)
+-- All three islands sit edge-to-edge in a row (Red | Gold | Green) so they
+-- read as one growing landmass. Red is 164 wide (spans x -82..82); each gold/
+-- green island is 130 wide, so their centers are placed to butt right up
+-- against the previous island's edge.
+local RED_CENTER_X = 0 -- MainIsland center (spans -82..82)
+local GOLD_CENTER_X = 147 -- spans 82..212, flush with Red's right edge
+local GREEN_CENTER_X = 277 -- spans 212..342, flush with Gold's right edge
 
 local function makePart(props)
 	local part = Instance.new("Part")
@@ -177,6 +180,11 @@ local function buildIslands(folder)
 	main.TopSurface = Enum.SurfaceType.Studs
 	main.Locked = true
 
+	-- Gold/Green start fully built and opaque on the server; the CLIENT hides
+	-- them per-player with LocalTransparencyModifier + CanCollide until they're
+	-- unlocked, then fades them in. (Setting Transparency=1 here would be a
+	-- one-way trip — LocalTransparencyModifier can't make a part LESS
+	-- transparent than its base Transparency, so the island could never reveal.)
 	local gold = makePart({
 		Name = "GoldenIsland",
 		Size = Vector3.new(130, 8, 120),
@@ -188,7 +196,6 @@ local function buildIslands(folder)
 	gold.TopSurface = Enum.SurfaceType.Studs
 	gold.Locked = true
 	gold:SetAttribute("IslandName", "Gold")
-	gold.Transparency = 1
 
 	local green = makePart({
 		Name = "GreenIsland",
@@ -201,7 +208,6 @@ local function buildIslands(folder)
 	green.TopSurface = Enum.SurfaceType.Studs
 	green.Locked = true
 	green:SetAttribute("IslandName", "Green")
-	green.Transparency = 1
 end
 
 -- The rebirth altar lives on the MAIN island's south edge (you must be able
@@ -297,10 +303,13 @@ function TreeBuilder.Build(onBuy, getRebirths, getAutomationUnlocked)
 
 	buildAltar(folder)
 
-	-- portals between islands (gated by progression)
-	local toGold = buildPortal(folder, "GoldenPortal", Vector3.new(GOLD_CENTER_X - 50, 0.3, 5), "⭐ GOLDEN ISLAND")
-	local toGreen = buildPortal(folder, "GreenPortal", Vector3.new(GREEN_CENTER_X - 50, 0.3, 5), "🟢 AUTOMATION ISLAND")
-	local toRed = buildPortal(folder, "ReturnPortal", Vector3.new(RED_CENTER_X + 50, 0.3, 5), "↩ BACK")
+	-- Portals along the southern seams. The islands are flush, so once unlocked
+	-- you can also just walk across; the portals are the signposted fast-travel
+	-- and the visible gate. Placed at z=-52 to stay clear of the upgrade pads.
+	local toGold = buildPortal(folder, "GoldenPortal", Vector3.new(82, 0.3, -52), "⭐ TO GOLD")
+	local backToRed = buildPortal(folder, "ReturnPortal", Vector3.new(100, 0.3, -52), "↩ TO RED")
+	local toGreen = buildPortal(folder, "GreenPortal", Vector3.new(212, 0.3, -52), "🟢 TO GREEN")
+	local backToGold = buildPortal(folder, "ReturnPortalGreen", Vector3.new(230, 0.3, -52), "↩ TO GOLD")
 
 	local teleportCooldown = {}
 	Players.PlayerRemoving:Connect(function(player)
@@ -325,15 +334,16 @@ function TreeBuilder.Build(onBuy, getRebirths, getAutomationUnlocked)
 		end)
 	end
 	-- Red to Gold: requires at least 1 rebirth
-	makeTeleporter(toGold, Vector3.new(GOLD_CENTER_X, 4, 5), function(player)
+	makeTeleporter(toGold, Vector3.new(GOLD_CENTER_X, 4, -30), function(player)
 		return getRebirths(player) >= 1
 	end)
-	-- Gold to Green: requires automation unlock
-	makeTeleporter(toGreen, Vector3.new(GREEN_CENTER_X, 4, 5), function(player)
+	-- Gold to Green: requires automation unlocked
+	makeTeleporter(toGreen, Vector3.new(GREEN_CENTER_X, 4, -30), function(player)
 		return getAutomationUnlocked and getAutomationUnlocked(player)
 	end)
-	-- Red/Green back portals: always available
-	makeTeleporter(toRed, Vector3.new(RED_CENTER_X, 4, 5), nil)
+	-- back portals: always available
+	makeTeleporter(backToRed, Vector3.new(RED_CENTER_X, 4, -30), nil)
+	makeTeleporter(backToGold, Vector3.new(GOLD_CENTER_X, 4, -30), nil)
 
 	local ticker = buildTv(folder)
 	folder.Parent = workspace
