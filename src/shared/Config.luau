@@ -46,7 +46,7 @@ Config.Roll = {
 	BaseGodChance = 1 / 5000, -- chance a roll hits the legends list
 	BaseFreshInterval = 4.0, -- seconds between background account scans
 	MaxUserId = 8_500_000_000, -- rough top of the current id space
-	BufferTarget = 60, -- scanned cards kept ready per server (bigger = smoother)
+	BufferTarget = 40, -- scanned cards kept ready per server (bigger = smoother)
 }
 
 -- Random ids are weighted by account era. A purely uniform 1-in-8.5B pick would

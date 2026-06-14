@@ -259,11 +259,65 @@ end
 
 -- ===== public API ==========================================================
 
--- Look up several user ids at once; returns map of userId -> {Username, DisplayName, Verified}.
--- One web call for the whole batch. Returns nil if the lookup itself failed (offline).
+Scanner.LastLookupError = nil
+
+-- Look up many user ids at once -> map userId -> {Username, DisplayName, Verified}.
+-- Primary path is RoProxy's BULK users endpoint, which simply OMITS ids that
+-- don't exist instead of erroring. That tolerance is essential: most random ids
+-- across the 8.5B space are dead, and the engine call
+-- (UserService:GetUserInfosByUserIdsAsync) THROWS if even one id in the batch is
+-- invalid — which is exactly why the game kept falling back to stub cards.
+-- Returns nil only if every path failed (HTTP off AND the engine call threw).
 function Scanner.LookupUsers(userIds)
+	if #userIds == 0 then
+		return {}
+	end
+
+	-- RoProxy bulk POST (tolerant of invalid ids, one call for the whole batch)
+	if httpEnabled ~= false and os.clock() >= proxyDisabledUntil then
+		local body = HttpService:JSONEncode({ userIds = userIds, excludeBannedUsers = false })
+		local ok, response = pcall(function()
+			return HttpService:PostAsync(
+				"https://users.roproxy.com/v1/users",
+				body,
+				Enum.HttpContentType.ApplicationJson,
+				false
+			)
+		end)
+		if ok then
+			local decoded
+			local decodeOk = pcall(function()
+				decoded = HttpService:JSONDecode(response)
+			end)
+			if decodeOk and type(decoded) == "table" and type(decoded.data) == "table" then
+				httpEnabled = true
+				proxyFailures = 0
+				local result = {}
+				for _, info in decoded.data do
+					if type(info) == "table" and type(info.id) == "number" then
+						result[info.id] = {
+							Username = info.name,
+							DisplayName = info.displayName,
+							Verified = info.hasVerifiedBadge == true,
+						}
+					end
+				end
+				return result
+			end
+			Scanner.LastLookupError = "roproxy bad response"
+		else
+			local message = tostring(response)
+			Scanner.LastLookupError = "roproxy: " .. message
+			if message:find("not enabled") or message:find("Http requests") then
+				httpEnabled = false
+			end
+		end
+	end
+
+	-- Fallback: engine batch. Throws if ANY id is invalid, so this realistically
+	-- only succeeds when HTTP is off and every sampled id happens to be valid.
 	local result = nil
-	pcall(function()
+	local ok, err = pcall(function()
 		local infos = UserService:GetUserInfosByUserIdsAsync(userIds)
 		result = {}
 		for _, info in infos do
@@ -274,6 +328,9 @@ function Scanner.LookupUsers(userIds)
 			}
 		end
 	end)
+	if not ok then
+		Scanner.LastLookupError = "userservice: " .. tostring(err)
+	end
 	return result
 end
 
@@ -281,9 +338,16 @@ end
 -- Returns a complete card data table.
 function Scanner.Scan(userId, basicInfo)
 	local worn = scanWornAssets(userId)
-	local rap = fetchRap(userId)
-	local robloxBadges = fetchRobloxBadges(userId)
-	local accountAge = fetchAccountAgeYears(userId)
+	-- The RoProxy per-account deep scans (RAP, badges, age) are slow and the main
+	-- source of web-request volume. Only run them for lower (older) ids — the
+	-- accounts actually likely to own collectibles/badges — so username lookups
+	-- and the buffer stay fast. Higher ids grade on id + verified + worn items.
+	local rap, robloxBadges, accountAge = nil, {}, nil
+	if userId <= 1_000_000 then
+		rap = fetchRap(userId)
+		robloxBadges = fetchRobloxBadges(userId)
+		accountAge = fetchAccountAgeYears(userId)
+	end
 
 	local username = basicInfo.Username or ("User" .. userId)
 	local facts = {

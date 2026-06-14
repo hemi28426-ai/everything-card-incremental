@@ -70,48 +70,44 @@ local function scanAndStore(userId, basicInfo)
 	return card
 end
 
--- Refill the buffer with fresh real accounts. UserService:GetUserInfosByUserIds
--- throws if ANY id in a batch is invalid, and most random ids across the whole
--- id space don't exist — so a naive batch nearly always fails and the game
--- falls into stub mode even when published. Instead we look ids up one at a
--- time (skipping the dead ones) and fire several concurrently so it's still
--- fast. Stub mode only kicks in if EVERY lookup fails (API genuinely off).
+-- Refill the buffer with fresh real accounts. Scanner.LookupUsers uses the
+-- RoProxy bulk endpoint, which returns only the valid ids and never throws on
+-- dead ones — so one batch call reliably yields several real accounts. We only
+-- drop to stub mode if the lookup itself fails (HTTP off and the engine call
+-- also threw), and recover automatically the moment a later call succeeds.
 local function refillTick()
 	if refilling or #buffer >= Config.Roll.BufferTarget then
 		return
 	end
 	refilling = true
 
-	local need = Config.Roll.BufferTarget - #buffer
-	local pending = math.clamp(need, 1, 16) -- concurrent single-id lookups
-	local done = 0
-	local got = 0
-	for _ = 1, pending do
-		task.spawn(function()
-			local userId = randomUserId()
-			if not scanCache[userId] then
-				local found = Scanner.LookupUsers({ userId })
-				local basicInfo = found and found[userId]
-				if basicInfo then
-					table.insert(buffer, scanAndStore(userId, basicInfo))
-					got += 1
-				end
-			end
-			done += 1
-		end)
-	end
-	while done < pending do
-		task.wait()
+	local candidates = {}
+	for _ = 1, 25 do
+		local id = randomUserId()
+		if not scanCache[id] then
+			table.insert(candidates, id)
+		end
 	end
 
-	if got > 0 then
-		consecutiveLookupFailures = 0
-		offlineMode = false
-	else
+	local found = Scanner.LookupUsers(candidates)
+	if found == nil then
 		consecutiveLookupFailures += 1
 		if consecutiveLookupFailures >= OFFLINE_AFTER_FAILURES and not offlineMode then
 			offlineMode = true
-			warn("[ECI] No account lookups succeeded — using stub cards. On a PUBLISHED game this means the user API is unavailable; in Studio enable Game Settings > Security > Allow Studio Access to API Services.")
+			warn(("[ECI] Account lookups failing — using stub cards. Last error: %s  (HTTP must be ON; in Studio also enable Allow Studio Access to API Services)"):format(tostring(Scanner.LastLookupError)))
+		end
+		refilling = false
+		return
+	end
+
+	consecutiveLookupFailures = 0
+	offlineMode = false
+	for userId, basicInfo in found do
+		if #buffer >= Config.Roll.BufferTarget then
+			break
+		end
+		if not scanCache[userId] then
+			table.insert(buffer, scanAndStore(userId, basicInfo))
 		end
 	end
 	refilling = false
