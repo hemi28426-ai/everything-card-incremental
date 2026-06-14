@@ -236,13 +236,53 @@ function UI:BuildDevCheat()
 	create("TextLabel", {
 		BackgroundTransparency = 1,
 		Position = UDim2.new(0, 8, 0, 4),
-		Size = UDim2.new(1, -16, 0, 16),
+		Size = UDim2.new(1, -40, 0, 16),
 		Font = Enum.Font.GothamBold,
 		TextSize = 12,
 		TextColor3 = COLORS.Red,
+		TextXAlignment = Enum.TextXAlignment.Left,
 		Text = "DEV CHEAT",
 		Parent = devPanel,
 	})
+
+	-- a small re-open chip that sits where the panel was, hidden until closed
+	local reopen = create("TextButton", {
+		AnchorPoint = Vector2.new(1, 1),
+		Position = UDim2.new(1, -12, 1, -112),
+		Size = UDim2.fromOffset(54, 26),
+		BackgroundColor3 = COLORS.Panel,
+		BackgroundTransparency = 0.08,
+		Font = Enum.Font.GothamBold,
+		TextSize = 12,
+		TextColor3 = COLORS.Red,
+		Text = "🛠 DEV",
+		Visible = false,
+		Parent = self.ScreenGui,
+	})
+	addCorner(reopen, UDim.new(0, 8))
+	create("UIStroke", { Color = COLORS.Red, Thickness = 2, Parent = reopen })
+
+	-- close (✕) button
+	local closeBtn = create("TextButton", {
+		AnchorPoint = Vector2.new(1, 0),
+		Position = UDim2.new(1, -6, 0, 4),
+		Size = UDim2.fromOffset(20, 20),
+		BackgroundColor3 = COLORS.Red,
+		Font = Enum.Font.GothamBold,
+		TextSize = 13,
+		TextColor3 = COLORS.Text,
+		Text = "✕",
+		Parent = devPanel,
+	})
+	addCorner(closeBtn, UDim.new(0, 6))
+	closeBtn.Activated:Connect(function()
+		devPanel.Visible = false
+		reopen.Visible = true
+	end)
+	reopen.Activated:Connect(function()
+		devPanel.Visible = true
+		reopen.Visible = false
+	end)
 
 	-- one labelled "Coins: [input] [Set]" row factory
 	local function field(y, placeholder, command)
@@ -302,7 +342,7 @@ function UI:BuildSettings()
 	local panel = create("Frame", {
 		AnchorPoint = Vector2.new(1, 0),
 		Position = UDim2.new(1, -12, 0, 66),
-		Size = UDim2.fromOffset(250, 290),
+		Size = UDim2.fromOffset(250, 350),
 		BackgroundColor3 = COLORS.Panel,
 		BackgroundTransparency = 0.05,
 		Visible = false,
@@ -314,7 +354,7 @@ function UI:BuildSettings()
 	create("TextLabel", {
 		BackgroundTransparency = 1,
 		Position = UDim2.new(0, 14, 0, 8),
-		Size = UDim2.new(1, -28, 0, 24),
+		Size = UDim2.new(1, -28, 0, 22),
 		Font = Enum.Font.GothamBlack,
 		TextSize = 16,
 		TextColor3 = COLORS.Text,
@@ -322,34 +362,63 @@ function UI:BuildSettings()
 		Text = "SETTINGS",
 		Parent = panel,
 	})
+	create("TextLabel", {
+		BackgroundTransparency = 1,
+		Position = UDim2.new(0, 14, 0, 32),
+		Size = UDim2.new(1, -28, 0, 16),
+		Font = Enum.Font.Gotham,
+		TextSize = 12,
+		TextColor3 = COLORS.TextDim,
+		TextXAlignment = Enum.TextXAlignment.Left,
+		Text = "Auto-sell (skip) rarities:",
+		Parent = panel,
+	})
+
+	-- a scrolling list with one toggle per rarity (every tier can be skipped)
+	local sellScroll = create("ScrollingFrame", {
+		Position = UDim2.new(0, 10, 0, 52),
+		Size = UDim2.new(1, -20, 0, 132),
+		BackgroundTransparency = 1,
+		BorderSizePixel = 0,
+		ScrollBarThickness = 4,
+		ScrollBarImageColor3 = COLORS.PanelLight,
+		CanvasSize = UDim2.new(),
+		AutomaticCanvasSize = Enum.AutomaticSize.Y,
+		Parent = panel,
+	})
+	create("UIListLayout", { Padding = UDim.new(0, 3), Parent = sellScroll })
 
 	self.AutoSellButtons = {}
-	for index, tierName in { "Common", "Uncommon", "Rare" } do
-		local tier = Config.TierByName[tierName]
-		local y = 12 + index * 38
+	for _, tier in Config.Tiers do
+		local tierName = tier.Name
+		local row = create("Frame", {
+			BackgroundTransparency = 1,
+			Size = UDim2.new(1, -6, 0, 26),
+			Parent = sellScroll,
+		})
 		create("TextLabel", {
 			BackgroundTransparency = 1,
-			Position = UDim2.new(0, 14, 0, y),
-			Size = UDim2.new(1, -100, 0, 30),
+			Position = UDim2.new(0, 4, 0, 0),
+			Size = UDim2.new(1, -76, 1, 0),
 			Font = Enum.Font.GothamBold,
 			TextSize = 13,
 			TextColor3 = tier.Color,
 			TextXAlignment = Enum.TextXAlignment.Left,
-			Text = "Auto-sell " .. tierName,
-			Parent = panel,
+			Text = tierName,
+			Parent = row,
 		})
 		local button = create("TextButton", {
-			AnchorPoint = Vector2.new(1, 0),
-			Position = UDim2.new(1, -14, 0, y),
-			Size = UDim2.fromOffset(64, 30),
+			AnchorPoint = Vector2.new(1, 0.5),
+			Position = UDim2.new(1, -2, 0.5, 0),
+			Size = UDim2.fromOffset(60, 22),
 			BackgroundColor3 = COLORS.Disabled,
 			Font = Enum.Font.GothamBold,
-			TextSize = 13,
+			TextSize = 12,
 			TextColor3 = COLORS.Text,
 			Text = "OFF",
-			Parent = panel,
+			Parent = row,
 		})
-		addCorner(button, UDim.new(0, 8))
+		addCorner(button, UDim.new(0, 7))
 		button.Activated:Connect(function()
 			local current = self.State and self.State.AutoSell[tierName] == true
 			self.Callbacks.OnSetAutoSell(tierName, not current)
@@ -359,7 +428,7 @@ function UI:BuildSettings()
 
 	-- ===== auto-rebirth (unlocked on the green island) =====
 	create("Frame", {
-		Position = UDim2.new(0, 14, 0, 158),
+		Position = UDim2.new(0, 14, 0, 192),
 		Size = UDim2.new(1, -28, 0, 2),
 		BackgroundColor3 = COLORS.PanelLight,
 		BorderSizePixel = 0,
@@ -367,8 +436,8 @@ function UI:BuildSettings()
 	})
 	create("TextLabel", {
 		BackgroundTransparency = 1,
-		Position = UDim2.new(0, 14, 0, 166),
-		Size = UDim2.new(1, -28, 0, 22),
+		Position = UDim2.new(0, 14, 0, 200),
+		Size = UDim2.new(1, -28, 0, 20),
 		Font = Enum.Font.GothamBlack,
 		TextSize = 14,
 		TextColor3 = COLORS.Gold,
@@ -376,12 +445,10 @@ function UI:BuildSettings()
 		Text = "⭐ AUTO-REBIRTH",
 		Parent = panel,
 	})
-
-	-- on/off
 	create("TextLabel", {
 		BackgroundTransparency = 1,
-		Position = UDim2.new(0, 14, 0, 192),
-		Size = UDim2.new(1, -100, 0, 30),
+		Position = UDim2.new(0, 14, 0, 224),
+		Size = UDim2.new(1, -100, 0, 28),
 		Font = Enum.Font.GothamBold,
 		TextSize = 13,
 		TextColor3 = COLORS.Text,
@@ -391,8 +458,8 @@ function UI:BuildSettings()
 	})
 	local rebirthToggle = create("TextButton", {
 		AnchorPoint = Vector2.new(1, 0),
-		Position = UDim2.new(1, -14, 0, 192),
-		Size = UDim2.fromOffset(64, 30),
+		Position = UDim2.new(1, -14, 0, 224),
+		Size = UDim2.fromOffset(64, 28),
 		BackgroundColor3 = COLORS.Disabled,
 		Font = Enum.Font.GothamBold,
 		TextSize = 13,
@@ -407,12 +474,10 @@ function UI:BuildSettings()
 		local tokens = self.State and self.State.AutoRebirthTokens or 10
 		self.Callbacks.OnSetAutoRebirth(not on, tokens)
 	end)
-
-	-- token threshold input
 	create("TextLabel", {
 		BackgroundTransparency = 1,
-		Position = UDim2.new(0, 14, 0, 228),
-		Size = UDim2.new(1, -100, 0, 30),
+		Position = UDim2.new(0, 14, 0, 258),
+		Size = UDim2.new(1, -100, 0, 28),
 		Font = Enum.Font.GothamBold,
 		TextSize = 13,
 		TextColor3 = COLORS.Text,
@@ -422,8 +487,8 @@ function UI:BuildSettings()
 	})
 	local tokenInput = create("TextBox", {
 		AnchorPoint = Vector2.new(1, 0),
-		Position = UDim2.new(1, -14, 0, 228),
-		Size = UDim2.fromOffset(64, 30),
+		Position = UDim2.new(1, -14, 0, 258),
+		Size = UDim2.fromOffset(64, 28),
 		BackgroundColor3 = COLORS.PanelLight,
 		Font = Enum.Font.GothamBold,
 		TextSize = 14,
@@ -445,8 +510,8 @@ function UI:BuildSettings()
 
 	self.AutoRebirthHint = create("TextLabel", {
 		BackgroundTransparency = 1,
-		Position = UDim2.new(0, 14, 0, 262),
-		Size = UDim2.new(1, -28, 0, 22),
+		Position = UDim2.new(0, 14, 0, 292),
+		Size = UDim2.new(1, -28, 0, 30),
 		Font = Enum.Font.Gotham,
 		TextSize = 11,
 		TextColor3 = COLORS.TextDim,

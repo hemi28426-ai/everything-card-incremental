@@ -219,12 +219,23 @@ local function decideTier(facts, traits)
 		trait(facts.AccountAge .. "y account")
 	end
 
-	-- highest tier whose condition holds wins
-	if facts.AdminBadge or facts.Rap and facts.Rap >= 1_000_000 or facts.DominusCount >= 2 then
+	-- highest tier whose condition holds wins (God/Divine/Secret come from the
+	-- legends list, not from scanning — those are the fixed famous accounts)
+	if (facts.Rap and facts.Rap >= 5_000_000) or facts.DominusCount >= 3 then
+		return "Ancient"
+	end
+	if facts.AdminBadge or (facts.Rap and facts.Rap >= 1_000_000) or facts.DominusCount >= 2 then
 		return "Mythic"
 	end
 	if (facts.Rap and facts.Rap >= 100_000) or facts.DominusCount >= 1 or facts.UserId <= 10_000 then
 		return "Legendary"
+	end
+	if (facts.Rap and facts.Rap >= 25_000)
+		or (facts.LimitedCount >= 1 and facts.Verified)
+		or facts.UserId <= 100_000
+		or (facts.AccountAge ~= nil and facts.AccountAge >= 12)
+	then
+		return "Epic"
 	end
 	if (facts.Rap and facts.Rap > 0)
 		or facts.LimitedCount >= 1
@@ -233,7 +244,6 @@ local function decideTier(facts, traits)
 		or facts.UserId <= 1_000_000
 		or facts.UserId % 100_000 == 0
 		or (facts.NameLength <= 4 and facts.CleanName)
-		or (facts.AccountAge ~= nil and facts.AccountAge >= 15)
 	then
 		return "Rare"
 	end

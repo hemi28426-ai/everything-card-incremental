@@ -544,11 +544,10 @@ sellCardRemote.OnServerEvent:Connect(function(player, key)
 	pushState(player, true)
 end)
 
-local AUTO_SELL_ALLOWED = { Common = true, Uncommon = true, Rare = true }
-
 setAutoSellRemote.OnServerEvent:Connect(function(player, tierName, enabled)
 	local session = sessions[player]
-	if not session or type(tierName) ~= "string" or not AUTO_SELL_ALLOWED[tierName] then
+	-- any real tier can be auto-sold (skipped) now, even the top ones
+	if not session or type(tierName) ~= "string" or not Config.TierByName[tierName] then
 		return
 	end
 	session.Data.AutoSell[tierName] = if enabled == true then true else nil
@@ -681,8 +680,9 @@ local AUTOBUY_MATCHERS = {
 }
 
 -- Buy the single cheapest affordable purple-tree node matching `matcher`
--- (respecting prerequisites and max levels). Returns true if something bought.
-local function autoBuyCategory(session, matcher)
+-- (respecting prerequisites and max levels). `reserve` coins are kept untouched
+-- so auto-buying can't starve a pending auto-rebirth. Returns true if it bought.
+local function autoBuyCategory(session, matcher, reserve)
 	local data = session.Data
 	local bestNode, bestCost = nil, nil
 	for _, node in Config.Tree do
@@ -692,7 +692,7 @@ local function autoBuyCategory(session, matcher)
 			local prereqMet = not node.Requires or (data.Upgrades[node.Requires] or 0) >= 1
 			if not maxedOut and prereqMet then
 				local cost = Config.GetNodeCost(node, level)
-				if data.Coins >= cost and (not bestCost or cost < bestCost) then
+				if data.Coins - cost >= reserve and (not bestCost or cost < bestCost) then
 					bestNode, bestCost = node, cost
 				end
 			end
@@ -712,7 +712,23 @@ local function runAutomation(player, session)
 	if not stats.AutoCore then
 		return false
 	end
+	local data = session.Data
 	local changed = false
+
+	-- Auto-rebirth has priority. If it's ready, fire it first; otherwise reserve
+	-- the coins it needs so the auto-buyers below can't spend the player back
+	-- under the threshold and stall it forever.
+	local reserve = 0
+	if stats.AutoRebirthUnlocked and data.AutoRebirthOn then
+		local threshold = math.max(1, data.AutoRebirthTokens or 10)
+		if Config.GetRebirthTokens(data.Coins) >= threshold and hasLegendaryPlus(data) then
+			if doRebirth(player, session) > 0 then
+				session.Stats = Config.ComputeStats(data.Upgrades, data.RebirthUpgrades)
+				return true -- rebirthed; let the next tick handle buying
+			end
+		end
+		reserve = Config.GetCoinsForTokens(threshold - 1) -- coins needed to reach `threshold`
+	end
 
 	for category in stats.AutoBuy do
 		if category == "backpack" then
@@ -721,14 +737,14 @@ local function runAutomation(player, session)
 			end
 		else
 			local matcher = AUTOBUY_MATCHERS[category]
-			if matcher and autoBuyCategory(session, matcher) then
+			if matcher and autoBuyCategory(session, matcher, reserve) then
 				changed = true
 			end
 		end
 	end
 
 	if changed then
-		session.Stats = Config.ComputeStats(session.Data.Upgrades, session.Data.RebirthUpgrades)
+		session.Stats = Config.ComputeStats(data.Upgrades, data.RebirthUpgrades)
 		stats = session.Stats
 	end
 
@@ -737,16 +753,6 @@ local function runAutomation(player, session)
 	end
 	if stats.AutoEquipUnlocked and equipBest(session) then
 		changed = true
-	end
-	if stats.AutoRebirthUnlocked and session.Data.AutoRebirthOn then
-		-- fire once a rebirth would grant at least the player's chosen token
-		-- threshold (fixed, never escalates)
-		local threshold = math.max(1, session.Data.AutoRebirthTokens or 10)
-		if Config.GetRebirthTokens(session.Data.Coins) >= threshold and hasLegendaryPlus(session.Data) then
-			if doRebirth(player, session) > 0 then
-				changed = true
-			end
-		end
 	end
 
 	return changed

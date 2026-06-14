@@ -11,10 +11,13 @@ Config.Tiers = {
 	{ Name = "Common", Color = Color3.fromRGB(160, 165, 180), Boost = 1, SellValue = 5 },
 	{ Name = "Uncommon", Color = Color3.fromRGB(95, 205, 120), Boost = 4, SellValue = 25 },
 	{ Name = "Rare", Color = Color3.fromRGB(80, 150, 255), Boost = 15, SellValue = 150 },
-	{ Name = "Legendary", Color = Color3.fromRGB(255, 160, 50), Boost = 75, SellValue = 2500 },
-	{ Name = "Mythic", Color = Color3.fromRGB(255, 80, 140), Boost = 400, SellValue = 25000 },
-	{ Name = "God", Color = Color3.fromRGB(255, 215, 60), Boost = 2000, SellValue = 250000 },
-	{ Name = "Secret", Color = Color3.fromRGB(255, 40, 60), Boost = 9999, SellValue = 1000000 },
+	{ Name = "Epic", Color = Color3.fromRGB(170, 90, 255), Boost = 45, SellValue = 700 },
+	{ Name = "Legendary", Color = Color3.fromRGB(255, 160, 50), Boost = 120, SellValue = 3000 },
+	{ Name = "Mythic", Color = Color3.fromRGB(255, 80, 140), Boost = 500, SellValue = 30000 },
+	{ Name = "Ancient", Color = Color3.fromRGB(60, 210, 200), Boost = 2200, SellValue = 200000 },
+	{ Name = "God", Color = Color3.fromRGB(255, 215, 60), Boost = 9000, SellValue = 1500000 },
+	{ Name = "Divine", Color = Color3.fromRGB(225, 205, 255), Boost = 40000, SellValue = 15000000 },
+	{ Name = "Secret", Color = Color3.fromRGB(255, 40, 60), Boost = 200000, SellValue = 250000000 },
 }
 Config.TierByName = {}
 for index, tier in Config.Tiers do
@@ -26,10 +29,10 @@ end
 -- you can add anyone here; KnownId is just a fallback if resolution fails.
 Config.Legends = {
 	{ Username = "Roblox", KnownId = 1, Tier = "Secret", Flavor = "You rolled the corporate mainframe. Reality is collapsing." },
+	{ Username = "DavidBaszucki", Tier = "Divine", Flavor = "The CEO of imagination itself." },
 	{ Username = "builderman", KnownId = 156, Tier = "God", Flavor = "The original architect. Check your messages." },
 	{ Username = "Shedletsky", KnownId = 261, Tier = "God", Flavor = "Sword fights on the heights, forever." },
 	{ Username = "Hazem", Tier = "God", Flavor = "PLS DONATE. The clout is immeasurable." },
-	{ Username = "DavidBaszucki", Tier = "God", Flavor = "The CEO of imagination itself." },
 }
 
 -- ===== Rolling =============================================================
