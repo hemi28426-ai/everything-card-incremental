@@ -40,6 +40,8 @@ local DEFAULT_DATA = {
 	AutoSell = {}, -- tierName -> true (auto-sell pulls of this tier)
 	AutoOn = true,
 	AutomationUnlocked = false,
+	AutoRebirthOn = true, -- whether auto-rebirth fires (once unlocked)
+	AutoRebirthTokens = 10, -- auto-rebirth once a rebirth would grant this many tokens
 	LastSeen = 0,
 }
 

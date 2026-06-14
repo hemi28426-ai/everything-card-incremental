@@ -3,7 +3,6 @@
 -- Pad billboards (cost/level, per-player) are drawn client-side; this module
 -- only builds the shared geometry and the buy prompts.
 
-local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 
 local Shared = ReplicatedStorage:WaitForChild("Shared")
@@ -233,37 +232,9 @@ local function buildAltar(folder)
 	prompt.Parent = altar
 end
 
-local function buildPortal(folder, name, position, labelText)
-	local portal = makePart({
-		Name = name,
-		Size = Vector3.new(8, 0.6, 8),
-		CFrame = CFrame.new(position),
-		Color = Color3.fromRGB(255, 215, 60),
-		Material = Enum.Material.Neon,
-		Parent = folder,
-	})
-	local gui = Instance.new("SurfaceGui")
-	gui.Face = Enum.NormalId.Top
-	gui.SizingMode = Enum.SurfaceGuiSizingMode.PixelsPerStud
-	gui.PixelsPerStud = 25
-	gui.Parent = portal
-	local label = Instance.new("TextLabel")
-	label.BackgroundTransparency = 1
-	label.Size = UDim2.new(1, 0, 1, 0)
-	label.Rotation = 180
-	label.Font = Enum.Font.GothamBlack
-	label.TextSize = 30
-	label.TextWrapped = true
-	label.TextColor3 = Color3.fromRGB(60, 40, 0)
-	label.Text = labelText
-	label.Parent = gui
-	return portal
-end
-
--- Builds everything. onBuy(player, nodeId) is called when a pad prompt
--- fires; getRebirths(player) gates the golden portal, getAutomationUnlocked(player)
--- gates the green portal. Returns the TV ticker label so the server can announce big pulls.
-function TreeBuilder.Build(onBuy, getRebirths, getAutomationUnlocked)
+-- Builds everything. onBuy(player, nodeId) is called when a pad prompt fires.
+-- Returns the TV ticker label so the server can announce big pulls.
+function TreeBuilder.Build(onBuy)
 	-- clear world pieces from any older version of the game, no matter how
 	-- this got loaded (old file, Rojo sync into an existing place, etc.)
 	for _, legacyName in { "Baseplate", "SpawnPlaza", "MainIsland", "GoldenIsland", "RebirthBridge", "UpgradeTree" } do
@@ -303,47 +274,9 @@ function TreeBuilder.Build(onBuy, getRebirths, getAutomationUnlocked)
 
 	buildAltar(folder)
 
-	-- Portals along the southern seams. The islands are flush, so once unlocked
-	-- you can also just walk across; the portals are the signposted fast-travel
-	-- and the visible gate. Placed at z=-52 to stay clear of the upgrade pads.
-	local toGold = buildPortal(folder, "GoldenPortal", Vector3.new(82, 0.3, -52), "⭐ TO GOLD")
-	local backToRed = buildPortal(folder, "ReturnPortal", Vector3.new(100, 0.3, -52), "↩ TO RED")
-	local toGreen = buildPortal(folder, "GreenPortal", Vector3.new(212, 0.3, -52), "🟢 TO GREEN")
-	local backToGold = buildPortal(folder, "ReturnPortalGreen", Vector3.new(230, 0.3, -52), "↩ TO GOLD")
-
-	local teleportCooldown = {}
-	Players.PlayerRemoving:Connect(function(player)
-		teleportCooldown[player] = nil
-	end)
-	local function makeTeleporter(portal, destination, gateCheck)
-		portal.Touched:Connect(function(hit)
-			local character = hit.Parent
-			local player = character and Players:GetPlayerFromCharacter(character)
-			if not player then
-				return
-			end
-			if gateCheck and not gateCheck(player) then
-				return
-			end
-			local now = os.clock()
-			if (teleportCooldown[player] or 0) > now then
-				return
-			end
-			teleportCooldown[player] = now + 2
-			character:PivotTo(CFrame.new(destination))
-		end)
-	end
-	-- Red to Gold: requires at least 1 rebirth
-	makeTeleporter(toGold, Vector3.new(GOLD_CENTER_X, 4, -30), function(player)
-		return getRebirths(player) >= 1
-	end)
-	-- Gold to Green: requires automation unlocked
-	makeTeleporter(toGreen, Vector3.new(GREEN_CENTER_X, 4, -30), function(player)
-		return getAutomationUnlocked and getAutomationUnlocked(player)
-	end)
-	-- back portals: always available
-	makeTeleporter(backToRed, Vector3.new(RED_CENTER_X, 4, -30), nil)
-	makeTeleporter(backToGold, Vector3.new(GOLD_CENTER_X, 4, -30), nil)
+	-- No portals: the three islands are flush, so you simply walk across the
+	-- seams. Locked islands are hidden and non-collidable per-player (handled
+	-- client-side), so you can't reach Gold/Green until you've unlocked them.
 
 	local ticker = buildTv(folder)
 	folder.Parent = workspace

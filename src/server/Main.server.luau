@@ -37,6 +37,7 @@ local setAutoSellRemote = makeRemote("SetAutoSell")
 local toggleAutoRemote = makeRemote("ToggleAuto")
 local backpackRemote = makeRemote("UpgradeBackpack")
 local rebirthRemote = makeRemote("Rebirth")
+local setAutoRebirthRemote = makeRemote("SetAutoRebirth")
 local stateRemote = makeRemote("StateChanged")
 local rollResultRemote = makeRemote("RollResult")
 local tickerRemote = makeRemote("Ticker")
@@ -102,6 +103,8 @@ local function buildState(session, includeCards)
 		Equipped = data.Equipped,
 		AutoOn = data.AutoOn,
 		AutomationUnlocked = data.AutomationUnlocked,
+		AutoRebirthOn = data.AutoRebirthOn,
+		AutoRebirthTokens = data.AutoRebirthTokens,
 		Stats = session.Stats,
 		CoinsPerSec = computeRate(data, session.Stats),
 		Rebirths = data.Rebirths,
@@ -398,6 +401,9 @@ devCheatRemote.OnServerEvent:Connect(function(player, command, value)
 	if command == "SetCoins" and type(value) == "number" then
 		session.Data.Coins = math.floor(value)
 		pushState(player, false)
+	elseif command == "SetTokens" and type(value) == "number" then
+		session.Data.RebirthTokens = math.floor(value)
+		pushState(player, false)
 	end
 end)
 
@@ -555,6 +561,21 @@ toggleAutoRemote.OnServerEvent:Connect(function(player)
 		return
 	end
 	session.Data.AutoOn = not session.Data.AutoOn
+	pushState(player, false)
+end)
+
+-- Player configures auto-rebirth: whether it's on, and the token threshold it
+-- waits for before firing. The threshold does NOT escalate — it fires every
+-- time you bank that many tokens' worth of coins.
+setAutoRebirthRemote.OnServerEvent:Connect(function(player, enabled, tokens)
+	local session = sessions[player]
+	if not session then
+		return
+	end
+	session.Data.AutoRebirthOn = enabled == true
+	if type(tokens) == "number" and tokens == tokens then -- reject NaN
+		session.Data.AutoRebirthTokens = math.clamp(math.floor(tokens), 1, 1_000_000)
+	end
 	pushState(player, false)
 end)
 
@@ -717,12 +738,12 @@ local function runAutomation(player, session)
 	if stats.AutoEquipUnlocked and equipBest(session) then
 		changed = true
 	end
-	if stats.AutoRebirthUnlocked then
-		-- only rebirth once it would beat the threshold (which doubles each time)
-		session.AutoRebirthAt = session.AutoRebirthAt or 10
-		if Config.GetRebirthTokens(session.Data.Coins) >= session.AutoRebirthAt and hasLegendaryPlus(session.Data) then
+	if stats.AutoRebirthUnlocked and session.Data.AutoRebirthOn then
+		-- fire once a rebirth would grant at least the player's chosen token
+		-- threshold (fixed, never escalates)
+		local threshold = math.max(1, session.Data.AutoRebirthTokens or 10)
+		if Config.GetRebirthTokens(session.Data.Coins) >= threshold and hasLegendaryPlus(session.Data) then
 			if doRebirth(player, session) > 0 then
-				session.AutoRebirthAt *= 2
 				changed = true
 			end
 		end
@@ -794,13 +815,7 @@ end)
 
 -- ===== world ===============================================================
 
-tvTicker = TreeBuilder.Build(onBuyUpgrade, function(player)
-	local session = sessions[player]
-	return if session then session.Data.Rebirths else 0
-end, function(player)
-	local session = sessions[player]
-	return if session then session.Data.AutomationUnlocked else false
-end)
+tvTicker = TreeBuilder.Build(onBuyUpgrade)
 Leaderboard.Start()
 
 -- the card pool scans fastest when someone bought Fresh Scan upgrades

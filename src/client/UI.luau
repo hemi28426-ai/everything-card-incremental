@@ -225,7 +225,7 @@ function UI:BuildDevCheat()
 	local devPanel = create("Frame", {
 		AnchorPoint = Vector2.new(1, 1),
 		Position = UDim2.new(1, -12, 1, -112),
-		Size = UDim2.fromOffset(200, 100),
+		Size = UDim2.fromOffset(200, 132),
 		BackgroundColor3 = COLORS.Panel,
 		BackgroundTransparency = 0.08,
 		Parent = self.ScreenGui,
@@ -244,36 +244,43 @@ function UI:BuildDevCheat()
 		Parent = devPanel,
 	})
 
-	local coinsInput = create("TextBox", {
-		BackgroundColor3 = COLORS.PanelLight,
-		Position = UDim2.new(0, 8, 0, 26),
-		Size = UDim2.new(1, -16, 0, 24),
-		Font = Enum.Font.GothamMedium,
-		TextSize = 12,
-		TextColor3 = COLORS.Text,
-		PlaceholderText = "Coins",
-		Parent = devPanel,
-	})
-	addCorner(coinsInput)
+	-- one labelled "Coins: [input] [Set]" row factory
+	local function field(y, placeholder, command)
+		local input = create("TextBox", {
+			BackgroundColor3 = COLORS.PanelLight,
+			Position = UDim2.new(0, 8, 0, y),
+			Size = UDim2.new(1, -64, 0, 24),
+			Font = Enum.Font.GothamMedium,
+			TextSize = 12,
+			TextColor3 = COLORS.Text,
+			ClearTextOnFocus = false,
+			PlaceholderText = placeholder,
+			Text = "",
+			Parent = devPanel,
+		})
+		addCorner(input)
+		local setButton = create("TextButton", {
+			AnchorPoint = Vector2.new(1, 0),
+			BackgroundColor3 = COLORS.Red,
+			Position = UDim2.new(1, -8, 0, y),
+			Size = UDim2.fromOffset(48, 24),
+			Font = Enum.Font.GothamBold,
+			TextSize = 12,
+			TextColor3 = COLORS.Text,
+			Text = "Set",
+			Parent = devPanel,
+		})
+		addCorner(setButton)
+		setButton.Activated:Connect(function()
+			local amount = tonumber(input.Text)
+			if amount then
+				self.Callbacks.DevCheat(command, amount)
+			end
+		end)
+	end
 
-	local setButton = create("TextButton", {
-		BackgroundColor3 = COLORS.Red,
-		Position = UDim2.new(0, 8, 0, 54),
-		Size = UDim2.new(1, -16, 0, 22),
-		Font = Enum.Font.GothamBold,
-		TextSize = 12,
-		TextColor3 = COLORS.Text,
-		Text = "Set",
-		Parent = devPanel,
-	})
-	addCorner(setButton)
-
-	setButton.Activated:Connect(function()
-		local amount = tonumber(coinsInput.Text)
-		if amount then
-			self.Callbacks.DevCheat("SetCoins", amount)
-		end
-	end)
+	field(26, "Coins", "SetCoins")
+	field(58, "Tokens", "SetTokens")
 end
 
 -- ===== settings (auto-sell) ================================================
@@ -295,7 +302,7 @@ function UI:BuildSettings()
 	local panel = create("Frame", {
 		AnchorPoint = Vector2.new(1, 0),
 		Position = UDim2.new(1, -12, 0, 66),
-		Size = UDim2.fromOffset(250, 168),
+		Size = UDim2.fromOffset(250, 290),
 		BackgroundColor3 = COLORS.Panel,
 		BackgroundTransparency = 0.05,
 		Visible = false,
@@ -349,6 +356,105 @@ function UI:BuildSettings()
 		end)
 		self.AutoSellButtons[tierName] = button
 	end
+
+	-- ===== auto-rebirth (unlocked on the green island) =====
+	create("Frame", {
+		Position = UDim2.new(0, 14, 0, 158),
+		Size = UDim2.new(1, -28, 0, 2),
+		BackgroundColor3 = COLORS.PanelLight,
+		BorderSizePixel = 0,
+		Parent = panel,
+	})
+	create("TextLabel", {
+		BackgroundTransparency = 1,
+		Position = UDim2.new(0, 14, 0, 166),
+		Size = UDim2.new(1, -28, 0, 22),
+		Font = Enum.Font.GothamBlack,
+		TextSize = 14,
+		TextColor3 = COLORS.Gold,
+		TextXAlignment = Enum.TextXAlignment.Left,
+		Text = "⭐ AUTO-REBIRTH",
+		Parent = panel,
+	})
+
+	-- on/off
+	create("TextLabel", {
+		BackgroundTransparency = 1,
+		Position = UDim2.new(0, 14, 0, 192),
+		Size = UDim2.new(1, -100, 0, 30),
+		Font = Enum.Font.GothamBold,
+		TextSize = 13,
+		TextColor3 = COLORS.Text,
+		TextXAlignment = Enum.TextXAlignment.Left,
+		Text = "Enabled",
+		Parent = panel,
+	})
+	local rebirthToggle = create("TextButton", {
+		AnchorPoint = Vector2.new(1, 0),
+		Position = UDim2.new(1, -14, 0, 192),
+		Size = UDim2.fromOffset(64, 30),
+		BackgroundColor3 = COLORS.Disabled,
+		Font = Enum.Font.GothamBold,
+		TextSize = 13,
+		TextColor3 = COLORS.Text,
+		Text = "OFF",
+		Parent = panel,
+	})
+	addCorner(rebirthToggle, UDim.new(0, 8))
+	self.AutoRebirthToggle = rebirthToggle
+	rebirthToggle.Activated:Connect(function()
+		local on = self.State and self.State.AutoRebirthOn == true
+		local tokens = self.State and self.State.AutoRebirthTokens or 10
+		self.Callbacks.OnSetAutoRebirth(not on, tokens)
+	end)
+
+	-- token threshold input
+	create("TextLabel", {
+		BackgroundTransparency = 1,
+		Position = UDim2.new(0, 14, 0, 228),
+		Size = UDim2.new(1, -100, 0, 30),
+		Font = Enum.Font.GothamBold,
+		TextSize = 13,
+		TextColor3 = COLORS.Text,
+		TextXAlignment = Enum.TextXAlignment.Left,
+		Text = "Rebirth at (tokens)",
+		Parent = panel,
+	})
+	local tokenInput = create("TextBox", {
+		AnchorPoint = Vector2.new(1, 0),
+		Position = UDim2.new(1, -14, 0, 228),
+		Size = UDim2.fromOffset(64, 30),
+		BackgroundColor3 = COLORS.PanelLight,
+		Font = Enum.Font.GothamBold,
+		TextSize = 14,
+		TextColor3 = COLORS.Text,
+		ClearTextOnFocus = false,
+		Text = "10",
+		Parent = panel,
+	})
+	addCorner(tokenInput, UDim.new(0, 8))
+	self.AutoRebirthInput = tokenInput
+	tokenInput.FocusLost:Connect(function()
+		local value = math.floor(tonumber(tokenInput.Text) or 0)
+		if value < 1 then
+			value = 1
+		end
+		local on = self.State and self.State.AutoRebirthOn == true
+		self.Callbacks.OnSetAutoRebirth(on, value)
+	end)
+
+	self.AutoRebirthHint = create("TextLabel", {
+		BackgroundTransparency = 1,
+		Position = UDim2.new(0, 14, 0, 262),
+		Size = UDim2.new(1, -28, 0, 22),
+		Font = Enum.Font.Gotham,
+		TextSize = 11,
+		TextColor3 = COLORS.TextDim,
+		TextXAlignment = Enum.TextXAlignment.Left,
+		TextWrapped = true,
+		Text = "Unlock on the green Automation Island.",
+		Parent = panel,
+	})
 
 	toggle.Activated:Connect(function()
 		panel.Visible = not panel.Visible
@@ -710,7 +816,7 @@ function UI:BuildPadSurfaces()
 			Parent = bg,
 		})
 
-		self.Pads[nodeId] = {
+		local entry = {
 			Pad = pad,
 			Trim = pad:FindFirstChild("Trim"),
 			Prompt = pad:FindFirstChildWhichIsA("ProximityPrompt"),
@@ -718,6 +824,20 @@ function UI:BuildPadSurfaces()
 			Gui = gui,
 			CostLabel = costLabel,
 		}
+		self.Pads[nodeId] = entry
+		-- hide every pad up front; UpdatePads reveals the unlocked ones once the
+		-- first state arrives, so nothing flashes on screen before then
+		pad.LocalTransparencyModifier = 1
+		if entry.Trim then
+			entry.Trim.LocalTransparencyModifier = 1
+		end
+		if entry.Path then
+			entry.Path.LocalTransparencyModifier = 1
+		end
+		if entry.Prompt then
+			entry.Prompt.Enabled = false
+		end
+		gui.Enabled = false
 	end
 
 	-- the gold island stays hidden (and unwalkable) until your first rebirth;
@@ -725,18 +845,13 @@ function UI:BuildPadSurfaces()
 	-- they're invisible from the very first frame, before any state arrives.
 	self.GoldenParts = {}
 	self.GreenParts = {}
-	for _, partName in { "GoldenIsland", "GoldenPortal", "ReturnPortal" } do
-		local part = tree:FindFirstChild(partName)
-		if part and part:IsA("BasePart") then
-			table.insert(self.GoldenParts, part)
-		end
+	local goldIsland = tree:FindFirstChild("GoldenIsland")
+	if goldIsland and goldIsland:IsA("BasePart") then
+		table.insert(self.GoldenParts, goldIsland)
 	end
-
-	for _, partName in { "GreenIsland", "GreenPortal", "ReturnPortalGreen" } do
-		local part = tree:FindFirstChild(partName)
-		if part and part:IsA("BasePart") then
-			table.insert(self.GreenParts, part)
-		end
+	local greenIsland = tree:FindFirstChild("GreenIsland")
+	if greenIsland and greenIsland:IsA("BasePart") then
+		table.insert(self.GreenParts, greenIsland)
 	end
 
 	-- hide both groups up front (state-driven reveal happens in UpdatePads)
@@ -1122,6 +1237,21 @@ function UI:Update(state)
 		local enabled = state.AutoSell[tierName] == true
 		button.Text = enabled and "ON" or "OFF"
 		button.BackgroundColor3 = if enabled then COLORS.Green else COLORS.Disabled
+	end
+
+	-- auto-rebirth controls
+	if self.AutoRebirthToggle then
+		local unlocked = state.Stats.AutoRebirthUnlocked == true
+		local on = state.AutoRebirthOn == true
+		self.AutoRebirthToggle.Text = on and "ON" or "OFF"
+		self.AutoRebirthToggle.BackgroundColor3 = if on then COLORS.Gold else COLORS.Disabled
+		self.AutoRebirthToggle.AutoButtonColor = unlocked
+		self.AutoRebirthToggle.Active = unlocked
+		if not self.AutoRebirthInput:IsFocused() then
+			self.AutoRebirthInput.Text = tostring(state.AutoRebirthTokens or 10)
+		end
+		self.AutoRebirthInput.TextEditable = unlocked
+		self.AutoRebirthHint.Visible = not unlocked
 	end
 
 	-- remotes deep-copy tables, so compare equipped by content, not identity
