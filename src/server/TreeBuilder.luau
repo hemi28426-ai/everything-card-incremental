@@ -213,8 +213,8 @@ local function buildAltar(folder)
 	altar.Anchored = true
 	altar.Size = Vector3.new(12, 1.2, 12)
 	altar.Position = Vector3.new(0, 0.6, -59)
-	altar.Color = Color3.fromRGB(255, 215, 60)
-	altar.Material = Enum.Material.Neon
+	altar.Color = Color3.fromRGB(200, 160, 40)
+	altar.Material = Enum.Material.SmoothPlastic
 	altar.Parent = folder
 
 	local prompt = Instance.new("ProximityPrompt")

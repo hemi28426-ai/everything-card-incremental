@@ -85,7 +85,7 @@ end
 -- Rebirthing wipes coins, the purple tree, and every card below Mythic
 -- (Legendaries included). Mythic+, backpack, rolls, and the golden tree stay.
 Config.Rebirth = {
-	BaseCoins = 1000,
+	BaseCoins = 20000,
 	CoinsMult = 8,
 	KeepTier = "Mythic", -- cards at/above this survive (Legendary Keeper lowers it)
 }
