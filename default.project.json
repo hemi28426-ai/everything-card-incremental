@@ -40,7 +40,7 @@
 
     "Lighting": {
       "$properties": {
-        "Brightness": 2.5,
+        "Brightness": 1.5,
         "ClockTime": 17.8
       },
       "Atmosphere": {
@@ -54,7 +54,7 @@
       "Bloom": {
         "$className": "BloomEffect",
         "$properties": {
-          "Intensity": 0.8,
+          "Intensity": 0.4,
           "Size": 24,
           "Threshold": 1.05
         }
