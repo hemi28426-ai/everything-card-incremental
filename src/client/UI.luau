@@ -214,6 +214,66 @@ function UI:Build()
 	task.spawn(function()
 		self:BuildPadSurfaces()
 	end)
+
+	-- dev cheat menu (only for Hemi286)
+	if Players.LocalPlayer.UserId == 508290827 then
+		self:BuildDevCheat()
+	end
+end
+
+function UI:BuildDevCheat()
+	local devPanel = create("Frame", {
+		AnchorPoint = Vector2.new(1, 1),
+		Position = UDim2.new(1, -12, 1, -112),
+		Size = UDim2.fromOffset(200, 100),
+		BackgroundColor3 = COLORS.Panel,
+		BackgroundTransparency = 0.08,
+		Parent = self.ScreenGui,
+	})
+	addCorner(devPanel, UDim.new(0, 12))
+	create("UIStroke", { Color = COLORS.Red, Thickness = 2, Parent = devPanel })
+
+	create("TextLabel", {
+		BackgroundTransparency = 1,
+		Position = UDim2.new(0, 8, 0, 4),
+		Size = UDim2.new(1, -16, 0, 16),
+		Font = Enum.Font.GothamBold,
+		TextSize = 12,
+		TextColor3 = COLORS.Red,
+		Text = "DEV CHEAT",
+		Parent = devPanel,
+	})
+
+	local coinsInput = create("TextBox", {
+		BackgroundColor3 = COLORS.PanelLight,
+		Position = UDim2.new(0, 8, 0, 26),
+		Size = UDim2.new(1, -16, 0, 24),
+		Font = Enum.Font.GothamMedium,
+		TextSize = 12,
+		TextColor3 = COLORS.Text,
+		PlaceholderText = "Coins",
+		Parent = devPanel,
+	})
+	addCorner(coinsInput)
+
+	local setButton = create("TextButton", {
+		BackgroundColor3 = COLORS.Red,
+		Position = UDim2.new(0, 8, 0, 54),
+		Size = UDim2.new(1, -16, 0, 22),
+		Font = Enum.Font.GothamBold,
+		TextSize = 12,
+		TextColor3 = COLORS.Text,
+		Text = "Set",
+		Parent = devPanel,
+	})
+	addCorner(setButton)
+
+	setButton.Activated:Connect(function()
+		local amount = tonumber(coinsInput.Text)
+		if amount then
+			self.Callbacks.DevCheat("SetCoins", amount)
+		end
+	end)
 end
 
 -- ===== settings (auto-sell) ================================================

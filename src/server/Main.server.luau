@@ -40,6 +40,7 @@ local rebirthRemote = makeRemote("Rebirth")
 local stateRemote = makeRemote("StateChanged")
 local rollResultRemote = makeRemote("RollResult")
 local tickerRemote = makeRemote("Ticker")
+local devCheatRemote = makeRemote("DevCheat")
 
 remotes.Parent = ReplicatedStorage
 
@@ -383,6 +384,21 @@ local function onBuyUpgrade(player, nodeId)
 end
 
 buyRemote.OnServerEvent:Connect(onBuyUpgrade)
+
+-- dev cheat menu (only for Hemi286)
+devCheatRemote.OnServerEvent:Connect(function(player, command, value)
+	if player.UserId ~= 508290827 then
+		return
+	end
+	local session = sessions[player]
+	if not session then
+		return
+	end
+	if command == "SetCoins" and type(value) == "number" then
+		session.Data.Coins = math.floor(value)
+		pushState(player, false)
+	end
+end)
 
 equipRemote.OnServerEvent:Connect(function(player, userIdStr)
 	local session = sessions[player]

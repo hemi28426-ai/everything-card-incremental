@@ -22,6 +22,7 @@ local rebirthRemote = remotes:WaitForChild("Rebirth")
 local stateRemote = remotes:WaitForChild("StateChanged")
 local rollResultRemote = remotes:WaitForChild("RollResult")
 local tickerRemote = remotes:WaitForChild("Ticker")
+local devCheatRemote = remotes:WaitForChild("DevCheat")
 
 local lastRollAt = 0
 local latestState = nil
@@ -67,6 +68,9 @@ ui = UI.new({
 	end,
 	OnRebirth = function()
 		rebirthRemote:FireServer()
+	end,
+	DevCheat = function(command, value)
+		devCheatRemote:FireServer(command, value)
 	end,
 })
 
