@@ -260,7 +260,7 @@ function Cards:HideSplash()
 	self.Overlay.Visible = false
 end
 
-function Cards:ShowSplash(rollCards, holdSeconds)
+function Cards:ShowSplash(rollCards, total, holdSeconds)
 	for _, child in self.CardRow:GetChildren() do
 		if child:IsA("Frame") then
 			child:Destroy()
@@ -268,8 +268,9 @@ function Cards:ShowSplash(rollCards, holdSeconds)
 	end
 
 	-- giant multi-rolls: show the 5 best cards and summarize the rest
+	total = total or #rollCards
 	local shown = rollCards
-	local hidden = 0
+	local hidden = total - #rollCards
 	if #rollCards > 5 then
 		local sorted = table.clone(rollCards)
 		table.sort(sorted, function(a, b)
@@ -278,7 +279,7 @@ function Cards:ShowSplash(rollCards, holdSeconds)
 			return (ta and ta.Index or 0) > (tb and tb.Index or 0)
 		end)
 		shown = table.move(sorted, 1, 5, 1, {})
-		hidden = #rollCards - 5
+		hidden = total - 5
 	end
 
 	local width = if #shown <= 1 then 210 elseif #shown <= 3 then 180 else 150
@@ -324,7 +325,7 @@ function Cards:ShowSplash(rollCards, holdSeconds)
 	end)
 end
 
-function Cards:ShowToast(card)
+function Cards:ShowToast(card, batchCount)
 	-- cap the stack so fast auto-rolling can't flood the screen (lag guard)
 	local labels = {}
 	for _, child in self.ToastColumn:GetChildren() do
@@ -338,6 +339,10 @@ function Cards:ShowToast(card)
 
 	local tier = Config.TierByName[card.Tier] or Config.Tiers[1]
 	local text = ("+ %s  %s"):format(card.Tier, card.DisplayName or card.Name)
+	if batchCount and batchCount > 1 then
+		-- summary toast for a whole multi-roll batch (best card shown)
+		text = ("+%d cards — best: %s %s"):format(batchCount, card.Tier, card.DisplayName or card.Name)
+	end
 	if card.AutoSold then
 		local why = if card.Reason == "full" then "full bag" else "auto-sell"
 		text = ("💰 %s — sold %s (+%s)"):format(why, card.DisplayName or card.Name, Format(card.SoldFor or 0))
@@ -396,33 +401,45 @@ end
 -- entry point for every roll result from the server
 function Cards:ShowRollResult(payload)
 	local rollCards = payload.Cards
+	local total = payload.Total or #rollCards
 	local bestIndex = 1
+	local bestCard = rollCards[1]
 	for _, card in rollCards do
 		local tier = Config.TierByName[card.Tier]
 		if tier and tier.Index > bestIndex then
 			bestIndex = tier.Index
+			bestCard = card
 		end
 	end
 
 	local isExciting = bestIndex >= Config.TierByName.Rare.Index
 	local isHuge = bestIndex >= Config.TierByName.Legendary.Index
+	local now = os.clock()
 
-	if isHuge then
+	-- fanfare/flash only for big pulls, and rate-limited so fast auto-rolling
+	-- can't strobe the screen
+	if isHuge and now - (self.LastFanfare or 0) > 0.8 then
+		self.LastFanfare = now
 		self:PlayFanfare(bestIndex)
 		self:FlashScreen(Config.Tiers[bestIndex].Color)
-	else
+	elseif not isHuge and now - (self.LastPing or 0) > 0.12 then
+		self.LastPing = now
 		self.RevealSound.PlaybackSpeed = 0.9 + bestIndex * 0.12
 		self.RevealSound:Play()
 	end
 
-	-- auto-roll spam of commons becomes toasts; anything exciting gets the splash
-	if payload.Auto and not isExciting then
-		for _, card in rollCards do
-			self:ShowToast(card)
+	-- Auto-rolls collapse to a single summary toast per batch (huge pulls still
+	-- get a splash, but throttled). Manual rolls always get the splash.
+	if payload.Auto then
+		if isHuge and now - (self.LastSplash or 0) > 0.6 then
+			self.LastSplash = now
+			self:ShowSplash(rollCards, total, 3)
+		else
+			self:ShowToast(bestCard, total)
 		end
 		return
 	end
-	self:ShowSplash(rollCards, if isExciting then 4.5 else 2.2)
+	self:ShowSplash(rollCards, total, if isExciting then 4.5 else 2.2)
 end
 
 return Cards

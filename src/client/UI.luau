@@ -635,6 +635,11 @@ function UI:BuildCollection()
 	toggle.Activated:Connect(function()
 		panel.Visible = not panel.Visible
 		toggle.Text = panel.Visible and "✕ Close" or "🃏 Cards"
+		-- tell the server to only stream the (potentially huge) collection while
+		-- this panel is actually open
+		if self.Callbacks.OnCollectionView then
+			self.Callbacks.OnCollectionView(panel.Visible)
+		end
 		if panel.Visible then
 			self:RebuildCollection()
 		end
@@ -688,7 +693,15 @@ function UI:RebuildCollection()
 
 	local slotsFull = #self.State.Equipped >= self.State.Stats.EquipSlots
 
+	-- only render the top rows; a collection of hundreds would build hundreds of
+	-- frames and stall. The rest are summarized at the bottom.
+	local RENDER_CAP = 80
+	local hiddenCount = math.max(#sorted - RENDER_CAP, 0)
+
 	for order, entry in sorted do
+		if order > RENDER_CAP then
+			break
+		end
 		local key, card = entry.Key, entry.Card
 		local tier = Config.TierByName[card.Tier] or Config.Tiers[1]
 		local isEquipped = equippedSet[key] == true
@@ -793,6 +806,26 @@ function UI:RebuildCollection()
 			self.Callbacks.OnSellCard(key)
 		end)
 	end
+
+	if hiddenCount > 0 then
+		local note = create("Frame", {
+			Size = UDim2.new(1, -8, 0, 36),
+			BackgroundColor3 = COLORS.Panel,
+			LayoutOrder = RENDER_CAP + 1,
+			Parent = self.CollectionScroll,
+		})
+		addCorner(note, UDim.new(0, 10))
+		create("TextLabel", {
+			BackgroundTransparency = 1,
+			Size = UDim2.new(1, -16, 1, 0),
+			Position = UDim2.new(0, 8, 0, 0),
+			Font = Enum.Font.GothamBold,
+			TextSize = 13,
+			TextColor3 = COLORS.TextDim,
+			Text = ("…and %d more (showing your top %d)"):format(hiddenCount, RENDER_CAP),
+			Parent = note,
+		})
+	end
 end
 
 function UI:ScheduleCollectionRebuild()
@@ -838,6 +871,9 @@ function UI:BuildPadSurfaces()
 			Face = Enum.NormalId.Top,
 			SizingMode = Enum.SurfaceGuiSizingMode.PixelsPerStud,
 			PixelsPerStud = 25,
+			-- only render the billboard when you're near it; with ~75 pads this
+			-- is the single biggest perf win as the tree fills out
+			MaxDistance = 65,
 			Parent = playerGui,
 		})
 		local bg = create("Frame", {
@@ -1097,6 +1133,12 @@ function UI:RefreshRebirthModal()
 end
 
 local function setPadVisible(entry, visible)
+	-- skip if nothing changed — UpdatePads runs on every state push, and writing
+	-- transparency/Enabled to ~75 pads every time is needless render churn
+	if entry.LastVisible == visible then
+		return
+	end
+	entry.LastVisible = visible
 	local modifier = if visible then 0 else 1
 	entry.Pad.LocalTransparencyModifier = modifier
 	if entry.Trim then
@@ -1164,28 +1206,44 @@ function UI:UpdatePads()
 			continue
 		end
 
-		-- pads you own glow warm white (local-only color change)
-		if entry.Trim then
-			entry.Trim.Color = if level >= 1
+		-- pads you own glow warm white (local-only color change). Cache so we
+		-- only write the property when the owned state actually flips.
+		local owned = level >= 1
+		if entry.Trim and entry.LastOwned ~= owned then
+			entry.LastOwned = owned
+			entry.Trim.Color = if owned
 				then Color3.fromRGB(255, 250, 220)
 				else (Config.BranchColors[treeNode.Branch] or Color3.fromRGB(200, 200, 200))
 		end
 
+		-- compute the cost label + affordability, then only write if changed
+		local text, affordable
 		if treeNode.MaxLevel and level >= treeNode.MaxLevel then
-			entry.CostLabel.Text = "✓ OWNED"
-			entry.CostLabel.TextColor3 = Color3.fromRGB(10, 60, 25)
-			if entry.Prompt then
-				entry.Prompt.Enabled = false -- nothing left to buy here
-			end
+			text, affordable = "✓ OWNED", true
 		else
 			local cost = Config.GetNodeCost(treeNode, level)
 			local prefix = if treeNode.MaxLevel == nil then ("Lv %d\n"):format(level) else ""
 			local icon = if treeNode.IsRebirth then "⭐" else "🪙"
 			local wallet = if treeNode.IsRebirth then state.RebirthTokens else state.Coins
-			entry.CostLabel.Text = prefix .. icon .. " " .. Format(cost)
-			entry.CostLabel.TextColor3 = if wallet >= cost
+			text = prefix .. icon .. " " .. Format(cost)
+			affordable = wallet >= cost
+		end
+		if entry.LastText ~= text then
+			entry.LastText = text
+			entry.CostLabel.Text = text
+		end
+		if entry.LastAfford ~= affordable then
+			entry.LastAfford = affordable
+			entry.CostLabel.TextColor3 = if affordable
 				then Color3.fromRGB(10, 60, 25)
 				else Color3.fromRGB(120, 20, 30)
+		end
+		if entry.Prompt then
+			local promptOn = not (treeNode.MaxLevel and level >= treeNode.MaxLevel)
+			if entry.LastPrompt ~= promptOn then
+				entry.LastPrompt = promptOn
+				entry.Prompt.Enabled = promptOn
+			end
 		end
 	end
 

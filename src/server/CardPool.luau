@@ -40,8 +40,20 @@ local OFFLINE_TIER_WEIGHTS = {
 
 -- ===== random account ids ==================================================
 
--- A flat, uniform pick across the entire id space: truly 1 in MaxUserId.
+-- A random id weighted by account era (see Config.IdRanges). Older/lower ids
+-- are rarer, which is what lets higher rarities actually show up.
 local function randomUserId()
+	local total = 0
+	for _, range in Config.IdRanges do
+		total += range.Weight
+	end
+	local pick = math.random() * total
+	for _, range in Config.IdRanges do
+		pick -= range.Weight
+		if pick <= 0 then
+			return math.floor(range.Min + math.random() * (range.Max - range.Min))
+		end
+	end
 	return math.floor(math.random() * Config.Roll.MaxUserId) + 1
 end
 
@@ -58,37 +70,48 @@ local function scanAndStore(userId, basicInfo)
 	return card
 end
 
+-- Refill the buffer with fresh real accounts. UserService:GetUserInfosByUserIds
+-- throws if ANY id in a batch is invalid, and most random ids across the whole
+-- id space don't exist — so a naive batch nearly always fails and the game
+-- falls into stub mode even when published. Instead we look ids up one at a
+-- time (skipping the dead ones) and fire several concurrently so it's still
+-- fast. Stub mode only kicks in if EVERY lookup fails (API genuinely off).
 local function refillTick()
 	if refilling or #buffer >= Config.Roll.BufferTarget then
 		return
 	end
 	refilling = true
 
-	local candidates = {}
-	for _ = 1, 25 do
-		table.insert(candidates, randomUserId())
+	local need = Config.Roll.BufferTarget - #buffer
+	local pending = math.clamp(need, 1, 16) -- concurrent single-id lookups
+	local done = 0
+	local got = 0
+	for _ = 1, pending do
+		task.spawn(function()
+			local userId = randomUserId()
+			if not scanCache[userId] then
+				local found = Scanner.LookupUsers({ userId })
+				local basicInfo = found and found[userId]
+				if basicInfo then
+					table.insert(buffer, scanAndStore(userId, basicInfo))
+					got += 1
+				end
+			end
+			done += 1
+		end)
 	end
-	local found = Scanner.LookupUsers(candidates)
-	if found == nil then
+	while done < pending do
+		task.wait()
+	end
+
+	if got > 0 then
+		consecutiveLookupFailures = 0
+		offlineMode = false
+	else
 		consecutiveLookupFailures += 1
 		if consecutiveLookupFailures >= OFFLINE_AFTER_FAILURES and not offlineMode then
 			offlineMode = true
-			warn("[ECI] Account lookups unavailable (offline Studio?) — switching to stub cards so you can still test.")
-		end
-		refilling = false
-		return
-	end
-	consecutiveLookupFailures = 0
-	offlineMode = false
-
-	local scanned = 0
-	for userId, basicInfo in found do
-		if scanned >= 12 then
-			break
-		end
-		if not scanCache[userId] then
-			scanned += 1
-			table.insert(buffer, scanAndStore(userId, basicInfo))
+			warn("[ECI] No account lookups succeeded — using stub cards. On a PUBLISHED game this means the user API is unavailable; in Studio enable Game Settings > Security > Allow Studio Access to API Services.")
 		end
 	end
 	refilling = false
@@ -155,20 +178,6 @@ function CardPool.Init(getBestFreshInterval)
 	end)
 end
 
--- Scan a player who actually joined this server (free real account data!)
-function CardPool.CapturePlayer(player)
-	task.spawn(function()
-		if scanCache[player.UserId] then
-			return
-		end
-		local found = Scanner.LookupUsers({ player.UserId })
-		local basicInfo = found and found[player.UserId]
-		if basicInfo then
-			table.insert(buffer, scanAndStore(player.UserId, basicInfo))
-		end
-	end)
-end
-
 -- Take one fresh account from the buffer (each is a unique random id).
 local function popBuffer()
 	if #buffer > 0 then
@@ -184,30 +193,36 @@ end
 -- A guaranteed fresh card. Online, if the buffer is empty, it scans one new
 -- random account right now (this yields briefly, but only when fully drained).
 -- Offline, it returns a unique stub.
+-- A guaranteed real account when the buffer is empty. Tries a few ids so a
+-- single dead id doesn't drop us to a stub. Yields (web calls), so it's only
+-- used for the FIRST card of a roll, never the bulk extras.
 local function freshFallback()
 	task.spawn(refillTick)
 	if not offlineMode then
-		local userId = randomUserId()
-		if not scanCache[userId] then
-			local found = Scanner.LookupUsers({ userId })
-			local basicInfo = found and found[userId]
-			if basicInfo then
-				return scanAndStore(userId, basicInfo)
+		for _ = 1, 3 do
+			local userId = randomUserId()
+			if not scanCache[userId] then
+				local found = Scanner.LookupUsers({ userId })
+				local basicInfo = found and found[userId]
+				if basicInfo then
+					return scanAndStore(userId, basicInfo)
+				end
 			end
 		end
 	end
 	return makeStubCard()
 end
 
--- Returns a fresh, unique card. `allowYield` lets it scan on demand when the
--- buffer is empty; extra (luck) attempts pass false so they never block.
+-- Returns a fresh card. `allowYield` lets it scan on demand when the buffer is
+-- empty (first card only); otherwise it just takes from the buffer so the bulk
+-- of a multi-roll never blocks the server.
 local function drawOneFresh(allowYield)
 	local card = popBuffer()
 	if card then
 		return card
 	end
-	if offlineMode then
-		return makeStubCard()
+	if not offlineMode then
+		task.spawn(refillTick)
 	end
 	if allowYield then
 		return freshFallback()
@@ -233,34 +248,37 @@ local function promoteTier(card, tierName)
 	}
 end
 
--- Draw one card for a roll. Never fails, never duplicates (except legends, which
--- are intentionally a fixed set). Luck adds extra fresh draws and keeps the
--- rarest of them. forcePool (Lucky Sevens) guarantees at least a Rare.
-function CardPool.Draw(stats, forcePool)
+-- Draw one card for a roll. Never fails. Takes one real account, then LUCK
+-- gives it a chance to be graded up a tier (or more) — that's what makes higher
+-- rarities reachable without scanning a billion dead ids per pull, and it only
+-- consumes one buffered account per card (cheap, so multi-rolls don't drain the
+-- buffer). forcePool (Lucky Sevens) guarantees at least a Rare.
+function CardPool.Draw(stats, forcePool, isPrimary)
 	-- god roll: a fixed famous account (the only intentional "repeat")
 	if #legendCards > 0 and math.random() < stats.GodChance then
 		return legendCards[math.random(1, #legendCards)]
 	end
 
-	-- luck = "best of N" fresh, independent, uniformly-random accounts
-	local attempts = 1 + math.min(math.floor((stats.LuckChance or 0) / 0.15), 6)
-	local best = nil
-	for index = 1, attempts do
-		local card = drawOneFresh(index == 1)
-		if card then
-			if not best or tierIndex(card) > tierIndex(best) then
-				best = card
-			end
-		end
+	local card = drawOneFresh(isPrimary ~= false)
+	if not card then
+		card = makeStubCard()
 	end
-	if not best then
-		best = makeStubCard()
+
+	-- luck = chance to bump the card up a tier (repeatable for big luck)
+	local luck = stats.LuckChance or 0
+	while luck > 0 and tierIndex(card) < #Config.Tiers do
+		if math.random() < math.min(luck, 1) then
+			card = promoteTier(card, Config.Tiers[tierIndex(card) + 1].Name)
+		else
+			break
+		end
+		luck -= 1
 	end
 
 	if forcePool then
-		best = promoteTier(best, "Rare")
+		card = promoteTier(card, "Rare")
 	end
-	return best
+	return card
 end
 
 return CardPool

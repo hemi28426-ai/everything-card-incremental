@@ -20,6 +20,7 @@ local toggleAutoRemote = remotes:WaitForChild("ToggleAuto")
 local backpackRemote = remotes:WaitForChild("UpgradeBackpack")
 local rebirthRemote = remotes:WaitForChild("Rebirth")
 local setAutoRebirthRemote = remotes:WaitForChild("SetAutoRebirth")
+local collectionViewRemote = remotes:WaitForChild("CollectionView")
 local stateRemote = remotes:WaitForChild("StateChanged")
 local rollResultRemote = remotes:WaitForChild("RollResult")
 local tickerRemote = remotes:WaitForChild("Ticker")
@@ -72,6 +73,9 @@ ui = UI.new({
 	end,
 	OnSetAutoRebirth = function(enabled, tokens)
 		setAutoRebirthRemote:FireServer(enabled, tokens)
+	end,
+	OnCollectionView = function(open)
+		collectionViewRemote:FireServer(open)
 	end,
 	DevCheat = function(command, value)
 		devCheatRemote:FireServer(command, value)

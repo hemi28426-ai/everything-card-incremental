@@ -38,6 +38,7 @@ local toggleAutoRemote = makeRemote("ToggleAuto")
 local backpackRemote = makeRemote("UpgradeBackpack")
 local rebirthRemote = makeRemote("Rebirth")
 local setAutoRebirthRemote = makeRemote("SetAutoRebirth")
+local collectionViewRemote = makeRemote("CollectionView")
 local stateRemote = makeRemote("StateChanged")
 local rollResultRemote = makeRemote("RollResult")
 local tickerRemote = makeRemote("Ticker")
@@ -69,6 +70,17 @@ local function countUnique(cards)
 	return count
 end
 
+-- Cached count of unique cards, so we don't re-scan the whole collection on
+-- every single card added (that O(n)-per-roll cost is a big source of the
+-- "lag grows as my collection gets huge" problem). Kept in sync by the few
+-- places that add/remove cards.
+local function uniqueCount(session)
+	if not session.UniqueCount then
+		session.UniqueCount = countUnique(session.Data.Cards)
+	end
+	return session.UniqueCount
+end
+
 local function hasLegendaryPlus(data)
 	local needed = Config.TierByName.Legendary.Index
 	for _, card in data.Cards do
@@ -95,7 +107,7 @@ local function buildState(session, includeCards)
 		BackpackLevel = data.BackpackLevel,
 		BackpackCapacity = backpackCapacity(session),
 		BackpackCost = Config.GetBackpackCost(data.BackpackLevel),
-		CardCount = countUnique(data.Cards),
+		CardCount = uniqueCount(session),
 		AutoSell = data.AutoSell,
 		BestTier = data.BestTier,
 		Upgrades = data.Upgrades,
@@ -128,7 +140,11 @@ local function pushState(player, includeCards)
 	if not session then
 		return
 	end
-	stateRemote:FireClient(player, buildState(session, includeCards))
+	-- The full card collection can be huge and only matters when the player is
+	-- actually looking at the collection panel, so we only ship it then.
+	-- Replicating hundreds of cards every second is the main "lag grows over
+	-- time" culprit.
+	stateRemote:FireClient(player, buildState(session, includeCards and session.WantsCards == true))
 	session.CoinsValue.Value = Format(session.Data.Coins)
 	session.RollsValue.Value = session.Data.TotalRolls
 end
@@ -160,7 +176,7 @@ local function addCardToCollection(session, card)
 		owned.Count += 1
 		return { IsNew = false, Count = owned.Count }
 	end
-	if countUnique(data.Cards) >= backpackCapacity(session) then
+	if uniqueCount(session) >= backpackCapacity(session) then
 		local soldFor = math.floor(tier.SellValue * stats.DupeMult)
 		data.Coins += soldFor
 		data.TotalEarned += soldFor
@@ -176,6 +192,7 @@ local function addCardToCollection(session, card)
 		Flavor = card.Flavor,
 		Count = 1,
 	}
+	session.UniqueCount = uniqueCount(session) + 1
 	-- new players shouldn't have to find the equip menu to start earning
 	if #data.Equipped < stats.EquipSlots then
 		table.insert(data.Equipped, key)
@@ -212,19 +229,24 @@ local function performRoll(player, isAuto)
 	count = math.floor(count)
 
 	local results = {}
-	for _ = 1, count do
+	local announceThreshold = Config.TierByName.Mythic.Index
+	for index = 1, count do
 		data.TotalRolls += 1
 		data.RollsBalance += 1
-		-- Lucky Sevens: every 7th all-time roll comes from the rare pool
+		-- Lucky Sevens: every 7th all-time roll is forced to at least Rare
 		local forcePool = stats.LuckySevens and data.TotalRolls % 7 == 0
-		local card = CardPool.Draw(stats, forcePool)
+		-- only the first card of a roll may block on a fresh scan; the rest take
+		-- from the buffer so a huge multi-roll never stalls the server
+		local card = CardPool.Draw(stats, forcePool, index == 1)
 		local outcome = addCardToCollection(session, card)
 
 		local tier = Config.TierByName[card.Tier]
 		if tier.Index > data.BestTier then
 			data.BestTier = tier.Index
 		end
-		if tier.Index >= Config.TierByName.Legendary.Index then
+		-- only announce the genuinely rare pulls server-wide (Legendary is common
+		-- with luck, so announcing every one would spam every client)
+		if tier.Index >= announceThreshold then
 			announce(("🎉 %s pulled %s %s!"):format(player.Name, card.Tier:upper(), card.DisplayName))
 		end
 
@@ -241,12 +263,24 @@ local function performRoll(player, isAuto)
 			AutoSold = outcome.AutoSold,
 			SoldFor = outcome.SoldFor,
 			Reason = outcome.Reason,
+			TierIndex = tier.Index,
 		})
 	end
 
-	rollResultRemote:FireClient(player, { Cards = results, Auto = isAuto })
+	-- Only send the rarest few cards to the client (it shows ~5 + "more"
+	-- anyway). Sending all of a 40-card multi-roll every pull is pure lag.
+	local total = #results
+	if total > 12 then
+		table.sort(results, function(a, b)
+			return a.TierIndex > b.TierIndex
+		end)
+		for i = total, 13, -1 do
+			results[i] = nil
+		end
+	end
+	rollResultRemote:FireClient(player, { Cards = results, Total = total, Auto = isAuto })
 	-- don't resend the whole collection per roll (lag!) — the income loop
-	-- flushes it within a second
+	-- flushes it within a second, and only if the player's looking at it
 	session.CardsDirty = true
 	pushState(player, false)
 end
@@ -303,7 +337,6 @@ local function onPlayerAdded(player)
 	end
 
 	pushState(player, true)
-	CardPool.CapturePlayer(player) -- their real account joins the card pool
 end
 
 Players.PlayerAdded:Connect(onPlayerAdded)
@@ -535,6 +568,7 @@ sellCardRemote.OnServerEvent:Connect(function(player, key)
 	local tier = Config.TierByName[card.Tier]
 	local earned = math.floor(tier.SellValue * card.Count * session.Stats.DupeMult)
 	data.Cards[key] = nil
+	session.UniqueCount = uniqueCount(session) - 1
 	local equippedIndex = table.find(data.Equipped, key)
 	if equippedIndex then
 		table.remove(data.Equipped, equippedIndex)
@@ -561,6 +595,19 @@ toggleAutoRemote.OnServerEvent:Connect(function(player)
 	end
 	session.Data.AutoOn = not session.Data.AutoOn
 	pushState(player, false)
+end)
+
+-- Client tells us when the collection panel is open. We only replicate the full
+-- card collection while it's open (and push it once immediately on open).
+collectionViewRemote.OnServerEvent:Connect(function(player, open)
+	local session = sessions[player]
+	if not session then
+		return
+	end
+	session.WantsCards = open == true
+	if session.WantsCards then
+		pushState(player, true)
+	end
 end)
 
 -- Player configures auto-rebirth: whether it's on, and the token threshold it
@@ -600,6 +647,7 @@ local function doRebirth(player, session)
 			data.Cards[key] = nil
 		end
 	end
+	session.UniqueCount = countUnique(data.Cards)
 	for index = #data.Equipped, 1, -1 do
 		if not data.Cards[data.Equipped[index]] then
 			table.remove(data.Equipped, index)

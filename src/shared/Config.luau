@@ -46,16 +46,20 @@ Config.Roll = {
 	BaseGodChance = 1 / 5000, -- chance a roll hits the legends list
 	BaseFreshInterval = 4.0, -- seconds between background account scans
 	MaxUserId = 8_500_000_000, -- rough top of the current id space
-	BufferTarget = 24, -- scanned cards kept ready per server
+	BufferTarget = 60, -- scanned cards kept ready per server (bigger = smoother)
 }
 
--- Random ids are sampled from these ranges (older accounts are rarer rolls).
+-- Random ids are weighted by account era. A purely uniform 1-in-8.5B pick would
+-- make Legendaries literally one-in-a-billion (almost every real account is a
+-- "common nobody"), so — like any gacha — older/lower ids (which grade higher)
+-- are made rarer-but-reachable. Each bracket lines up with a rarity floor:
+-- roughly Common 70% / Uncommon 20% / Rare 7% / Epic 2.5% / Legendary 0.5%.
 Config.IdRanges = {
-	{ Min = 1_000_000_000, Max = Config.Roll.MaxUserId, Weight = 70 },
-	{ Min = 100_000_000, Max = 1_000_000_000, Weight = 15 },
-	{ Min = 1_000_000, Max = 100_000_000, Weight = 10 },
-	{ Min = 10_000, Max = 1_000_000, Weight = 4 },
-	{ Min = 1, Max = 10_000, Weight = 1 },
+	{ Min = 100_000_000, Max = Config.Roll.MaxUserId, Weight = 70 }, -- Common
+	{ Min = 1_000_000, Max = 100_000_000, Weight = 20 }, -- Uncommon
+	{ Min = 100_000, Max = 1_000_000, Weight = 7 }, -- Rare
+	{ Min = 10_000, Max = 100_000, Weight = 2.5 }, -- Epic
+	{ Min = 1, Max = 10_000, Weight = 0.5 }, -- Legendary
 }
 
 Config.Economy = {
