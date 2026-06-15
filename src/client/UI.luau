@@ -183,7 +183,7 @@ function UI:BuildRollTV()
 	local gui = create("SurfaceGui", {
 		Name = "RollTVGui",
 		Adornee = screen,
-		Face = Enum.NormalId.Left, -- −X face, toward the player approaching from the plaza
+		Face = Enum.NormalId.Front, -- −Z face, toward the spawn you walk up from
 		SizingMode = Enum.SurfaceGuiSizingMode.PixelsPerStud,
 		PixelsPerStud = 50,
 		Parent = playerGui,
@@ -1146,6 +1146,7 @@ function UI:BuildPadSurfaces()
 			Path = pathParts[nodeId],
 			Gui = gui,
 			CostLabel = costLabel,
+			Area = treeNode.Area,
 		}
 		self.Pads[nodeId] = entry
 		-- hide every pad up front; UpdatePads reveals the unlocked ones once the
@@ -1166,12 +1167,25 @@ function UI:BuildPadSurfaces()
 	-- collect bridge segments per-player so each only sees/walks the parts they've
 	-- built. Each starts hidden + non-collidable; UpdateBridges reveals them.
 	self.BridgeSegs = { gold = {}, green = {}, shop = {} }
-	for _, part in tree:GetChildren() do
+	-- area parts (platforms / shop / pads): hidden until that bridge is finished
+	self.AreaParts = { gold = {}, green = {}, shop = {} }
+	for _, part in tree:GetDescendants() do
 		if part.Name == "BridgeSeg" then
 			local which = part:GetAttribute("Bridge")
 			local index = part:GetAttribute("Index")
 			if self.BridgeSegs[which] and index then
 				self.BridgeSegs[which][index] = part
+				part.LocalTransparencyModifier = 1
+				part.CanCollide = false
+			end
+		elseif part:IsA("BasePart") then
+			local area = part:GetAttribute("Area")
+			-- pads / trims / paths are revealed per-pad by setPadVisible, so only
+			-- scenery (platforms, shop, altar) goes in the area-reveal group
+			local n = part.Name
+			local isPadPart = n:match("^Pad_") or n:match("^Path_") or n == "Trim"
+			if area and self.AreaParts[area] and not isPadPart then
+				table.insert(self.AreaParts[area], part)
 				part.LocalTransparencyModifier = 1
 				part.CanCollide = false
 			end
@@ -1366,8 +1380,14 @@ local function setPadVisible(entry, visible)
 	entry.Gui.Enabled = visible
 end
 
--- Per-player bridge reveal: show + make walkable the parts you've built, hide
--- the rest (you fall through the gap until you finish the bridge).
+local function bridgeDone(state, which)
+	local conf = which and Config.Bridges[which]
+	return not which or (conf and (((state.Bridges and state.Bridges[which]) or 0) >= conf.Parts))
+end
+
+-- Per-player bridge reveal: built parts are solid + walkable; the unbuilt rest
+-- shows as a faint ghost (so you can see where the bridge will go) but you fall
+-- through it until you finish building.
 function UI:UpdateBridges()
 	if not self.BridgeSegs then
 		return
@@ -1378,7 +1398,21 @@ function UI:UpdateBridges()
 		for index, part in segs do
 			local on = index <= built
 			part.CanCollide = on
-			part.LocalTransparencyModifier = if on then 0 else 1
+			part.LocalTransparencyModifier = if on then 0 else 0.6
+		end
+	end
+end
+
+-- Reveal an area's platform/shop/scenery once its bridge is finished.
+function UI:UpdateAreas()
+	if not self.AreaParts then
+		return
+	end
+	for area, parts in self.AreaParts do
+		local shown = bridgeDone(self.State, area)
+		for _, part in parts do
+			part.LocalTransparencyModifier = if shown then 0 else 1
+			part.CanCollide = shown
 		end
 	end
 end
@@ -1388,13 +1422,16 @@ function UI:UpdatePads()
 	local automationUnlocked = state.AutomationUnlocked == true
 
 	self:UpdateBridges()
+	self:UpdateAreas()
 
 	for nodeId, entry in self.Pads do
 		local treeNode = Config.NodeById[nodeId]
 		local levels = if treeNode.IsRebirth then state.RebirthUpgrades else state.Upgrades
 		local level = levels[nodeId] or 0
-		-- show once the prerequisite is owned; automation pads also need Automation
-		local unlocked = (not treeNode.Requires or (levels[treeNode.Requires] or 0) >= 1)
+		-- show once you've bridged to its area, its prerequisite is owned, and
+		-- (for automation pads) you've bought Automation
+		local unlocked = bridgeDone(state, treeNode.Area)
+			and (not treeNode.Requires or (levels[treeNode.Requires] or 0) >= 1)
 			and (not treeNode.IsAutomation or automationUnlocked)
 
 		setPadVisible(entry, unlocked)

@@ -144,27 +144,28 @@ local R = {}
 local function rnode(def)
 	def.IsRebirth = true
 	def.Branch = "Rebirth"
+	def.Area = "gold"
 	table.insert(R, def)
 end
 
 -- ROOT (the only repeatable node; cost rockets 20x/level so it isn't spammed)
-rnode({ Id = "goldinc", Name = "Golden Income", Desc = "x2 ALL coin earnings, forever (cost 20x each level)", Pos = { 0, 60 }, Cost = 1, CostMult = 20, MaxLevel = nil })
+rnode({ Id = "goldinc", Name = "Golden Income", Desc = "x2 ALL coin earnings, forever (cost 20x each level)", Pos = { 0, 112 }, Cost = 1, CostMult = 20, MaxLevel = nil })
 
 -- spine (economy)
-rnode({ Id = "dupegold", Name = "Dupe Tycoon", Desc = "+100% dupe & sell value", Pos = { 0, 80 }, Cost = 4, Requires = "goldinc" })
-rnode({ Id = "bigbag", Name = "Bottomless Bag", Desc = "+30 backpack capacity", Pos = { 0, 100 }, Cost = 4, Requires = "dupegold" })
-rnode({ Id = "megacoin", Name = "Mega Income", Desc = "x3 ALL coin earnings (one-time)", Pos = { 0, 120 }, Cost = 25, Requires = "bigbag" })
+rnode({ Id = "dupegold", Name = "Dupe Tycoon", Desc = "+100% dupe & sell value", Pos = { 0, 132 }, Cost = 4, Requires = "goldinc" })
+rnode({ Id = "bigbag", Name = "Bottomless Bag", Desc = "+30 backpack capacity", Pos = { 0, 152 }, Cost = 4, Requires = "dupegold" })
+rnode({ Id = "megacoin", Name = "Mega Income", Desc = "x3 ALL coin earnings (one-time)", Pos = { 0, 172 }, Cost = 25, Requires = "bigbag" })
 
 -- left branch (speed / qol)
-rnode({ Id = "timelord", Name = "Time Lord", Desc = "Manual roll cooldown x0.6", Pos = { -24, 72 }, Cost = 4, Requires = "goldinc" })
-rnode({ Id = "overdrive", Name = "Scanner Overdrive", Desc = "Fresh accounts found 2x faster", Pos = { -24, 92 }, Cost = 3, Requires = "timelord" })
-rnode({ Id = "quickstart", Name = "Quick Start", Desc = "+25K starting coins after rebirth", Pos = { -24, 112 }, Cost = 3, Requires = "overdrive" })
-rnode({ Id = "dreamprofit", Name = "Dream Profits", Desc = "Offline earnings: full rate, 24h cap", Pos = { -46, 112 }, Cost = 5, Requires = "quickstart" })
+rnode({ Id = "timelord", Name = "Time Lord", Desc = "Manual roll cooldown x0.6", Pos = { -26, 124 }, Cost = 4, Requires = "goldinc" })
+rnode({ Id = "overdrive", Name = "Scanner Overdrive", Desc = "Fresh accounts found 2x faster", Pos = { -26, 146 }, Cost = 3, Requires = "timelord" })
+rnode({ Id = "quickstart", Name = "Quick Start", Desc = "+25K starting coins after rebirth", Pos = { -26, 168 }, Cost = 3, Requires = "overdrive" })
+rnode({ Id = "dreamprofit", Name = "Dream Profits", Desc = "Offline earnings: full rate, 24h cap", Pos = { -48, 168 }, Cost = 5, Requires = "quickstart" })
 
 -- right branch (slots / keep / tokens)
-rnode({ Id = "slotmaster", Name = "Slot Master", Desc = "+1 equip slot", Pos = { 24, 72 }, Cost = 4, Requires = "goldinc" })
-rnode({ Id = "keeper", Name = "Legendary Keeper", Desc = "Legendary cards survive rebirth", Pos = { 24, 92 }, Cost = 10, Requires = "slotmaster" })
-rnode({ Id = "tokenhoard", Name = "Token Hoarder", Desc = "+1 token from every rebirth", Pos = { 24, 112 }, Cost = 12, MaxLevel = 3, CostMult = 1, Requires = "keeper" })
+rnode({ Id = "slotmaster", Name = "Slot Master", Desc = "+1 equip slot", Pos = { 26, 124 }, Cost = 4, Requires = "goldinc" })
+rnode({ Id = "keeper", Name = "Legendary Keeper", Desc = "Legendary cards survive rebirth", Pos = { 26, 146 }, Cost = 10, Requires = "slotmaster" })
+rnode({ Id = "tokenhoard", Name = "Token Hoarder", Desc = "+1 token from every rebirth", Pos = { 26, 168 }, Cost = 12, MaxLevel = 3, CostMult = 1, Requires = "keeper" })
 
 Config.RebirthTree = R
 
@@ -177,27 +178,29 @@ local A = {}
 local function gnode(def)
 	def.IsRebirth = true
 	def.Branch = "Luck"
+	def.Area = "green"
 	table.insert(A, def)
 end
 local function anode(def)
 	def.IsRebirth = true
 	def.Branch = "Automation"
 	def.IsAutomation = true
+	def.Area = "green"
 	table.insert(A, def)
 end
 
 -- luck root + chain
-gnode({ Id = "eternalluck", Name = "Eternal Luck", Desc = "+10% rare chance", Pos = { 0, -60 }, Cost = 3 })
-gnode({ Id = "luckyseven", Name = "Lucky Sevens", Desc = "Every 7th roll is Rare or better", Pos = { 0, -80 }, Cost = 6, Requires = "eternalluck" })
-gnode({ Id = "godmagnet", Name = "God Magnet", Desc = "3x chance to roll a legend", Pos = { 0, -100 }, Cost = 5, Requires = "luckyseven" })
-gnode({ Id = "pantheon", Name = "Pantheon", Desc = "3x legend chance AGAIN", Pos = { 0, -120 }, Cost = 12, Requires = "godmagnet" })
-gnode({ Id = "luckburst", Name = "Luck Burst", Desc = "+15% rare chance", Pos = { -24, -76 }, Cost = 6, Requires = "eternalluck" })
+gnode({ Id = "eternalluck", Name = "Eternal Luck", Desc = "+10% rare chance", Pos = { 0, -112 }, Cost = 3 })
+gnode({ Id = "luckyseven", Name = "Lucky Sevens", Desc = "Every 7th roll is Rare or better", Pos = { 0, -132 }, Cost = 6, Requires = "eternalluck" })
+gnode({ Id = "godmagnet", Name = "God Magnet", Desc = "3x chance to roll a legend", Pos = { 0, -152 }, Cost = 5, Requires = "luckyseven" })
+gnode({ Id = "pantheon", Name = "Pantheon", Desc = "3x legend chance AGAIN", Pos = { 0, -172 }, Cost = 12, Requires = "godmagnet" })
+gnode({ Id = "luckburst", Name = "Luck Burst", Desc = "+15% rare chance", Pos = { -26, -124 }, Cost = 6, Requires = "eternalluck" })
 
 -- automation cluster (needs Automation bought at the TV)
-anode({ Id = "autocore", Name = "Automaton Core", Desc = "Powers automation (root)", Pos = { 28, -76 }, Cost = 3, MaxLevel = 1 })
-anode({ Id = "autoequip", Name = "Auto Equip", Desc = "Always keeps your best cards equipped", Pos = { 50, -64 }, Cost = 6, Requires = "autocore" })
-anode({ Id = "autosell", Name = "Auto Liquidate", Desc = "Auto-sells duplicate cards for coins", Pos = { 50, -88 }, Cost = 8, Requires = "autocore" })
-anode({ Id = "autorebirth", Name = "Auto Rebirth", Desc = "Rebirths automatically when worth it", Pos = { 28, -100 }, Cost = 25, Requires = "autocore" })
+anode({ Id = "autocore", Name = "Automaton Core", Desc = "Powers automation (root)", Pos = { 28, -124 }, Cost = 3, MaxLevel = 1 })
+anode({ Id = "autoequip", Name = "Auto Equip", Desc = "Always keeps your best cards equipped", Pos = { 50, -112 }, Cost = 6, Requires = "autocore" })
+anode({ Id = "autosell", Name = "Auto Liquidate", Desc = "Auto-sells duplicate cards for coins", Pos = { 50, -136 }, Cost = 8, Requires = "autocore" })
+anode({ Id = "autorebirth", Name = "Auto Rebirth", Desc = "Rebirths automatically when worth it", Pos = { 28, -160 }, Cost = 25, Requires = "autocore" })
 
 Config.AutomationTree = A
 
@@ -206,9 +209,9 @@ Config.AutomationTree = A
 -- The price climbs, then jumps 10x at the halfway part to make the second half a
 -- real goal. The Shop bridge is the longest (50 parts) but cheapest per part.
 Config.Bridges = {
-	gold = { Parts = 20, BaseCost = 250, Mult = 1.18, Dir = "north" },
-	green = { Parts = 30, BaseCost = 1500, Mult = 1.2, Dir = "south" },
-	shop = { Parts = 50, BaseCost = 60, Mult = 1.1, Dir = "west" },
+	gold = { Parts = 12, BaseCost = 120, Mult = 1.14 },
+	green = { Parts = 18, BaseCost = 600, Mult = 1.16 },
+	shop = { Parts = 50, BaseCost = 50, Mult = 1.08, TenXAtHalf = true },
 }
 
 function Config.GetBridgeCost(which, partsBuilt)
@@ -217,8 +220,8 @@ function Config.GetBridgeCost(which, partsBuilt)
 		return math.huge
 	end
 	local cost = b.BaseCost * b.Mult ^ partsBuilt
-	if partsBuilt >= math.floor(b.Parts / 2) then
-		cost *= 10 -- second half costs 10x more
+	if b.TenXAtHalf and partsBuilt >= math.floor(b.Parts / 2) then
+		cost *= 10 -- the shop bridge's second half costs 10x more
 	end
 	return math.floor(cost)
 end

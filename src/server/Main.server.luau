@@ -917,7 +917,9 @@ end)
 
 -- ===== world ===============================================================
 
-TreeBuilder.Build(onBuyUpgrade, onBuyBridge, onBuyShop)
+TreeBuilder.Build(onBuyUpgrade, onBuyBridge, onBuyShop, function(player)
+	performRoll(player, false)
+end)
 Leaderboard.Start()
 
 -- the card pool scans fastest when someone bought Fresh Scan upgrades
