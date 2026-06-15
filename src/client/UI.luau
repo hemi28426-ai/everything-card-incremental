@@ -186,6 +186,7 @@ function UI:BuildRollTV()
 		Face = Enum.NormalId.Front, -- −Z face, toward the spawn you walk up from
 		SizingMode = Enum.SurfaceGuiSizingMode.PixelsPerStud,
 		PixelsPerStud = 50,
+		ResetOnSpawn = false, -- CRITICAL: else it's deleted the moment you spawn
 		Parent = playerGui,
 	})
 	create("Frame", {
@@ -1093,6 +1094,7 @@ function UI:BuildPadSurfaces()
 			Face = Enum.NormalId.Top,
 			SizingMode = Enum.SurfaceGuiSizingMode.PixelsPerStud,
 			PixelsPerStud = 25,
+			ResetOnSpawn = false, -- survive respawns
 			-- only render the billboard when you're near it; with ~75 pads this
 			-- is the single biggest perf win as the tree fills out
 			MaxDistance = 65,
@@ -1200,6 +1202,7 @@ function UI:BuildPadSurfaces()
 			Face = Enum.NormalId.Top,
 			SizingMode = Enum.SurfaceGuiSizingMode.PixelsPerStud,
 			PixelsPerStud = 22,
+			ResetOnSpawn = false, -- survive respawns
 			Parent = playerGui,
 		})
 		local bg = create("Frame", {

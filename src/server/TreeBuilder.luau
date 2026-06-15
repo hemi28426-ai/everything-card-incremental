@@ -115,16 +115,16 @@ end
 local function buildRollTv(folder, onRoll)
 	local screen = makePart({
 		Name = "RollTV",
-		Size = Vector3.new(20, 13, 1),
-		CFrame = CFrame.new(0, 8, -18),
+		Size = Vector3.new(30, 17, 1),
+		CFrame = CFrame.new(0, 10, -20),
 		Color = Color3.fromRGB(28, 24, 40),
 		Parent = folder,
 	})
 	-- frame + a little stand so it reads as a machine, matte (no neon)
-	makePart({ Name = "TvFrame", Size = Vector3.new(22, 15, 1.4), CFrame = CFrame.new(0, 8, -18.4), Color = Color3.fromRGB(70, 60, 95), Parent = screen })
-	makePart({ Name = "TvBase", Size = Vector3.new(10, 4, 4), CFrame = CFrame.new(0, 1.5, -18.4), Color = Color3.fromRGB(55, 48, 75), Parent = screen })
+	makePart({ Name = "TvFrame", Size = Vector3.new(32.5, 19.5, 1.4), CFrame = CFrame.new(0, 10, -20.4), Color = Color3.fromRGB(70, 60, 95), Parent = screen })
+	makePart({ Name = "TvBase", Size = Vector3.new(14, 4, 5), CFrame = CFrame.new(0, 1.5, -20.4), Color = Color3.fromRGB(55, 48, 75), Parent = screen })
 	-- header sign
-	local header = makePart({ Name = "TvHeader", Size = Vector3.new(16, 2.4, 1.6), CFrame = CFrame.new(0, 16.2, -18.2), Color = Color3.fromRGB(120, 90, 200), Parent = screen })
+	local header = makePart({ Name = "TvHeader", Size = Vector3.new(24, 3, 1.6), CFrame = CFrame.new(0, 20.5, -20.2), Color = Color3.fromRGB(120, 90, 200), Parent = screen })
 	local hgui = Instance.new("SurfaceGui")
 	hgui.Face = Enum.NormalId.Front
 	hgui.Parent = header
