@@ -38,6 +38,7 @@ local setAutoSellRemote = makeRemote("SetAutoSell")
 local toggleAutoRemote = makeRemote("ToggleAuto")
 local backpackRemote = makeRemote("UpgradeBackpack")
 local buyRollSpeedRemote = makeRemote("BuyRollSpeed")
+local buyAutomationRemote = makeRemote("BuyAutomation")
 local rebirthRemote = makeRemote("Rebirth")
 local setAutoRebirthRemote = makeRemote("SetAutoRebirth")
 local collectionViewRemote = makeRemote("CollectionView")
@@ -121,6 +122,8 @@ local function buildState(session, includeCards)
 		AutoRebirthTokens = data.AutoRebirthTokens,
 		RollSpeedLevel = data.RollSpeedLevel,
 		RollSpeedCost = Config.GetRollSpeedCost(data.RollSpeedLevel),
+		Bridges = data.Bridges,
+		ShopUpgrades = data.ShopUpgrades,
 		HasFastAuto = session.HasFastAuto == true,
 		AutoInterval = if session.HasFastAuto then Config.Roll.AutoIntervalFast else Config.Roll.AutoInterval,
 		Stats = session.Stats,
@@ -219,9 +222,10 @@ local function performRoll(player, isAuto)
 		if now < session.NextAutoAt then
 			return
 		end
-		-- auto-roll runs at a FIXED interval (3s, or near-instant with the FAST
-		-- AUTO gamepass) — it is NOT sped up by your manual roll-speed upgrade
-		local interval = if session.HasFastAuto then Config.Roll.AutoIntervalFast else Config.Roll.AutoInterval
+		-- normal auto-roll fires every 3s. With the FAST AUTO gamepass it instead
+		-- fires at YOUR manual roll speed (so roll-speed upgrades also speed up
+		-- your auto). No separate auto-speed upgrades exist.
+		local interval = if session.HasFastAuto then stats.RollCooldown else Config.Roll.AutoInterval
 		session.NextAutoAt = now + interval
 	else
 		if now < session.NextRollAt then
@@ -324,7 +328,7 @@ local function onPlayerAdded(player)
 
 	leaderstats.Parent = player
 
-	local stats = Config.ComputeStats(data.RebirthUpgrades, data.RollSpeedLevel)
+	local stats = Config.ComputeStats(data.RebirthUpgrades, data.RollSpeedLevel, data.ShopUpgrades)
 	local session = {
 		Data = data,
 		CanSave = loadedSafely,
@@ -426,6 +430,9 @@ local function onBuyUpgrade(player, nodeId)
 	if treeNode.Requires and (levels[treeNode.Requires] or 0) < 1 then
 		return
 	end
+	if treeNode.IsAutomation and not data.AutomationUnlocked then
+		return -- must buy Automation at the Card Opener first
+	end
 	local cost = Config.GetNodeCost(treeNode, level)
 	if treeNode.IsRebirth then
 		if data.RebirthTokens < cost then
@@ -446,7 +453,7 @@ local function onBuyUpgrade(player, nodeId)
 		data.AutomationUnlocked = true
 	end
 
-	session.Stats = Config.ComputeStats(data.RebirthUpgrades, data.RollSpeedLevel)
+	session.Stats = Config.ComputeStats(data.RebirthUpgrades, data.RollSpeedLevel, data.ShopUpgrades)
 	pushState(player, false)
 end
 
@@ -687,7 +694,7 @@ local function doRebirth(player, session)
 	data.Rebirths += 1
 	data.RebirthTokens += tokens
 	data.Upgrades = {}
-	session.Stats = Config.ComputeStats(data.RebirthUpgrades, data.RollSpeedLevel)
+	session.Stats = Config.ComputeStats(data.RebirthUpgrades, data.RollSpeedLevel, data.ShopUpgrades)
 	data.Coins = session.Stats.StartCoins
 
 	announce(("🌟 %s rebirthed and earned %d token%s!"):format(player.Name, tokens, tokens == 1 and "" or "s"))
@@ -739,7 +746,7 @@ buyRollSpeedRemote.OnServerEvent:Connect(function(player)
 	end
 	data.Coins -= cost
 	data.RollSpeedLevel += 1
-	session.Stats = Config.ComputeStats(data.RebirthUpgrades, data.RollSpeedLevel)
+	session.Stats = Config.ComputeStats(data.RebirthUpgrades, data.RollSpeedLevel, data.ShopUpgrades)
 	pushState(player, false)
 end)
 
@@ -752,6 +759,70 @@ MarketplaceService.PromptGamePassPurchaseFinished:Connect(function(player, gameP
 			pushState(player, false)
 		end
 	end
+end)
+
+-- Build the next part of a bridge (paid in coins, via the bridge prompt). Buys
+-- as many parts as you can afford at once so you're not spamming it 50 times.
+local function onBuyBridge(player, which)
+	local session = sessions[player]
+	local conf = type(which) == "string" and Config.Bridges[which]
+	if not session or not conf then
+		return
+	end
+	local data = session.Data
+	local built = data.Bridges[which] or 0
+	local bought = false
+	while built < conf.Parts do
+		local cost = Config.GetBridgeCost(which, built)
+		if data.Coins < cost then
+			break
+		end
+		data.Coins -= cost
+		built += 1
+		bought = true
+	end
+	if bought then
+		data.Bridges[which] = built
+		pushState(player, false)
+	end
+end
+
+-- Buy a permanent shop upgrade (paid in coins, via a shop machine prompt).
+local function onBuyShop(player, itemId)
+	local session = sessions[player]
+	local item = type(itemId) == "string" and Config.ShopById[itemId]
+	if not session or not item then
+		return
+	end
+	local data = session.Data
+	local level = data.ShopUpgrades[itemId] or 0
+	local cost = Config.GetShopCost(item, level)
+	if data.Coins < cost then
+		return
+	end
+	data.Coins -= cost
+	data.ShopUpgrades[itemId] = level + 1
+	session.Stats = Config.ComputeStats(data.RebirthUpgrades, data.RollSpeedLevel, data.ShopUpgrades)
+	pushState(player, false)
+end
+
+-- Buy Automation at the Card Opener (paid in Rebirth Tokens). Unlocks auto-roll
+-- and the green automation tree.
+buyAutomationRemote.OnServerEvent:Connect(function(player)
+	local session = sessions[player]
+	if not session then
+		return
+	end
+	local data = session.Data
+	if data.AutomationUnlocked then
+		return
+	end
+	if data.RebirthTokens < Config.AutomationTokenCost then
+		return
+	end
+	data.RebirthTokens -= Config.AutomationTokenCost
+	data.AutomationUnlocked = true
+	pushState(player, false)
 end)
 
 -- ===== automation island (auto-equip / auto-sell / auto-rebirth) ==========
@@ -769,7 +840,7 @@ local function runAutomation(player, session)
 		local threshold = math.max(1, data.AutoRebirthTokens or 10)
 		if Config.GetRebirthTokens(data.Coins) >= threshold and hasLegendaryPlus(data) then
 			if doRebirth(player, session) > 0 then
-				session.Stats = Config.ComputeStats(data.RebirthUpgrades, data.RollSpeedLevel)
+				session.Stats = Config.ComputeStats(data.RebirthUpgrades, data.RollSpeedLevel, data.ShopUpgrades)
 				return true
 			end
 		end
@@ -809,7 +880,7 @@ task.spawn(function()
 	while true do
 		task.wait(0.2)
 		for player, session in sessions do
-			if session.Data.AutoOn then
+			if session.Data.AutoOn and session.Data.AutomationUnlocked then
 				task.spawn(performRoll, player, true)
 			end
 		end
@@ -846,7 +917,7 @@ end)
 
 -- ===== world ===============================================================
 
-tvTicker = TreeBuilder.Build(onBuyUpgrade)
+TreeBuilder.Build(onBuyUpgrade, onBuyBridge, onBuyShop)
 Leaderboard.Start()
 
 -- the card pool scans fastest when someone bought Fresh Scan upgrades

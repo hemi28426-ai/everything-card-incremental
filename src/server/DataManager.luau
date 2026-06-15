@@ -43,6 +43,8 @@ local DEFAULT_DATA = {
 	AutomationUnlocked = false,
 	AutoRebirthOn = true, -- whether auto-rebirth fires (once unlocked)
 	AutoRebirthTokens = 10, -- auto-rebirth once a rebirth would grant this many tokens
+	Bridges = {}, -- which -> parts built (gold/green/shop)
+	ShopUpgrades = {}, -- shop item id -> level
 	LastSeen = 0,
 }
 

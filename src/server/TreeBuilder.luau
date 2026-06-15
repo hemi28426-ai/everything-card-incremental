@@ -1,7 +1,8 @@
--- Generates the physical world from Config: upgrade pads with glowing paths
--- between them (like an upgrade-tree game), plus the purple card TV kiosk.
--- Pad billboards (cost/level, per-player) are drawn client-side; this module
--- only builds the shared geometry and the buy prompts.
+-- Builds the whole world at runtime: a central plaza with the Card TV, the GOLD
+-- platform (rebirth tree) to the north, the GREEN platform (luck + automation)
+-- to the south, and the SHOP to the west — each reached by a grey bridge you
+-- build part-by-part. Upgrade-pad billboards are drawn per-player on the client;
+-- this module builds the shared geometry, the buy prompts, and the bridges.
 
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 
@@ -12,14 +13,6 @@ local TreeBuilder = {}
 
 local PAD_SIZE = Vector3.new(8, 1, 8)
 local PAD_Y = 0.5
-
--- All three islands sit edge-to-edge in a row (Red | Gold | Green) so they
--- read as one growing landmass. Red is 164 wide (spans x -82..82); each gold/
--- green island is 130 wide, so their centers are placed to butt right up
--- against the previous island's edge.
-local RED_CENTER_X = 0 -- MainIsland center (spans -82..82)
-local GOLD_CENTER_X = 147 -- spans 82..212, flush with Red's right edge
-local GREEN_CENTER_X = 277 -- spans 212..342, flush with Gold's right edge
 
 local function makePart(props)
 	local part = Instance.new("Part")
@@ -36,6 +29,8 @@ local function makePart(props)
 	return part
 end
 
+-- ===== upgrade pads ========================================================
+
 local function buildPad(treeNode, folder, onBuy)
 	local x, z = treeNode.Pos[1], treeNode.Pos[2]
 	local color = Config.BranchColors[treeNode.Branch] or Color3.fromRGB(200, 200, 200)
@@ -49,7 +44,7 @@ local function buildPad(treeNode, folder, onBuy)
 	})
 	pad:SetAttribute("NodeId", treeNode.Id)
 
-	local trim = makePart({
+	makePart({
 		Name = "Trim",
 		Size = Vector3.new(PAD_SIZE.X + 0.6, 0.2, PAD_SIZE.Z + 0.6),
 		CFrame = CFrame.new(x, 0.1, z),
@@ -57,7 +52,6 @@ local function buildPad(treeNode, folder, onBuy)
 		Material = Enum.Material.Neon,
 		Parent = pad,
 	})
-	trim.Transparency = 0
 
 	local prompt = Instance.new("ProximityPrompt")
 	prompt.ActionText = "Buy"
@@ -80,8 +74,8 @@ local function buildPath(fromNode, toNode, folder)
 	end
 	local mid = (a + b) / 2
 	makePart({
-		Name = "Path_" .. toNode.Id, -- client shows/hides this with its pad
-		Size = Vector3.new(1.4, 0.1, distance - 6),
+		Name = "Path_" .. toNode.Id,
+		Size = Vector3.new(1.4, 0.1, math.max(distance - 6, 1)),
 		CFrame = CFrame.lookAt(mid, b),
 		Color = Config.BranchColors[toNode.Branch] or Color3.fromRGB(200, 200, 200),
 		Material = Enum.Material.Neon,
@@ -90,101 +84,188 @@ local function buildPath(fromNode, toNode, folder)
 	})
 end
 
--- The roll TV: a plain purple square screen (no stand). The interactive UI on
--- it — the card, the Roll button, the speed/auto controls — is drawn per-player
--- by the client (a SurfaceGui adorned to this part), so it's touchable and each
--- player sees their own card.
+-- ===== platforms ===========================================================
+
+local function plate(folder, name, cx, cz, sx, sz, color)
+	local p = makePart({
+		Name = name,
+		Size = Vector3.new(sx, 8, sz),
+		CFrame = CFrame.new(cx, -4, cz),
+		Color = color,
+		Material = Enum.Material.Plastic,
+		Parent = folder,
+	})
+	p.TopSurface = Enum.SurfaceType.Studs
+	p.Locked = true
+	return p
+end
+
+-- ===== the Card TV =========================================================
+
 local function buildRollTv(folder)
+	-- east of spawn; its WEST face (−X, "Left") holds the screen, facing the
+	-- player who walks up from the plaza centre.
 	local screen = makePart({
 		Name = "RollTV",
-		Size = Vector3.new(18, 12, 1),
-		CFrame = CFrame.new(0, 7, -18),
-		Color = Color3.fromRGB(150, 90, 255),
+		Size = Vector3.new(1, 13, 20),
+		CFrame = CFrame.new(18, 8, 0),
+		Color = Color3.fromRGB(22, 16, 40),
 		Material = Enum.Material.SmoothPlastic,
 		Parent = folder,
 	})
-	screen.Anchored = true
-
+	makePart({
+		Name = "TvBezel",
+		Size = Vector3.new(0.8, 15, 22),
+		CFrame = CFrame.new(17.7, 8, 0),
+		Color = Color3.fromRGB(150, 90, 255),
+		Material = Enum.Material.Neon,
+		Transparency = 0.1,
+		Parent = screen,
+	})
+	makePart({
+		Name = "TvMarquee",
+		Size = Vector3.new(1.2, 2, 22),
+		CFrame = CFrame.new(18, 16, 0),
+		Color = Color3.fromRGB(200, 120, 255),
+		Material = Enum.Material.Neon,
+		Parent = screen,
+	})
 	local glow = Instance.new("PointLight")
 	glow.Color = Color3.fromRGB(170, 110, 255)
-	glow.Brightness = 1.5
-	glow.Range = 26
+	glow.Brightness = 1.8
+	glow.Range = 28
 	glow.Parent = screen
 end
 
--- All three islands are built at runtime so they can have per-player visibility
--- and fade-in effects when unlocked.
-local function buildIslands(folder)
-	local main = makePart({
-		Name = "MainIsland",
-		Size = Vector3.new(164, 8, 144),
-		CFrame = CFrame.new(RED_CENTER_X, -4, 5),
-		Color = Color3.fromRGB(181, 166, 219),
-		Material = Enum.Material.Plastic,
-		Parent = folder,
-	})
-	main.TopSurface = Enum.SurfaceType.Studs
-	main.Locked = true
+-- ===== rebirth altar (far end of the GOLD platform, north) =================
 
-	-- Gold/Green start fully built and opaque on the server; the CLIENT hides
-	-- them per-player with LocalTransparencyModifier + CanCollide until they're
-	-- unlocked, then fades them in. (Setting Transparency=1 here would be a
-	-- one-way trip — LocalTransparencyModifier can't make a part LESS
-	-- transparent than its base Transparency, so the island could never reveal.)
-	local gold = makePart({
-		Name = "GoldenIsland",
-		Size = Vector3.new(130, 8, 120),
-		CFrame = CFrame.new(GOLD_CENTER_X, -4, 5),
-		Color = Color3.fromRGB(242, 199, 64),
-		Material = Enum.Material.Plastic,
-		Parent = folder,
-	})
-	gold.TopSurface = Enum.SurfaceType.Studs
-	gold.Locked = true
-	gold:SetAttribute("IslandName", "Gold")
-
-	local green = makePart({
-		Name = "GreenIsland",
-		Size = Vector3.new(130, 8, 120),
-		CFrame = CFrame.new(GREEN_CENTER_X, -4, 5),
-		Color = Color3.fromRGB(100, 200, 100),
-		Material = Enum.Material.Plastic,
-		Parent = folder,
-	})
-	green.TopSurface = Enum.SurfaceType.Studs
-	green.Locked = true
-	green:SetAttribute("IslandName", "Green")
-end
-
--- The rebirth altar lives on the MAIN island's south edge (you must be able
--- to rebirth before the golden island reveals itself). The client shows a
--- confirm panel when the prompt fires.
 local function buildAltar(folder)
-	local altar = Instance.new("Part")
-	altar.Name = "RebirthAltar"
-	altar.Anchored = true
-	altar.Size = Vector3.new(12, 1.2, 12)
-	altar.Position = Vector3.new(0, 0.6, -59)
-	altar.Color = Color3.fromRGB(200, 160, 40)
-	altar.Material = Enum.Material.SmoothPlastic
-	altar.Parent = folder
-
+	local altar = makePart({
+		Name = "RebirthAltar",
+		Size = Vector3.new(14, 1.4, 14),
+		CFrame = CFrame.new(0, 0.7, 145),
+		Color = Color3.fromRGB(255, 215, 60),
+		Material = Enum.Material.Neon,
+		Parent = folder,
+	})
 	local prompt = Instance.new("ProximityPrompt")
 	prompt.Name = "RebirthPrompt"
 	prompt.ActionText = "Rebirth"
 	prompt.ObjectText = "⭐ Rebirth Altar"
-	prompt.HoldDuration = 0.5 -- small hold so nobody triggers it by accident
+	prompt.HoldDuration = 0.5
 	prompt.MaxActivationDistance = 12
 	prompt.RequiresLineOfSight = false
 	prompt.Parent = altar
 end
 
--- Builds everything. onBuy(player, nodeId) is called when a pad prompt fires.
--- Returns the TV ticker label so the server can announce big pulls.
-function TreeBuilder.Build(onBuy)
-	-- clear world pieces from any older version of the game, no matter how
-	-- this got loaded (old file, Rojo sync into an existing place, etc.)
-	for _, legacyName in { "Baseplate", "SpawnPlaza", "MainIsland", "GoldenIsland", "RebirthBridge", "UpgradeTree" } do
+-- ===== shop (west) =========================================================
+
+local function buildShop(folder, onBuyShop)
+	-- a small store box with a few "machines" you buy from
+	local cx, cz = -115, 0
+	plate(folder, "ShopFloor", cx, cz, 70, 60, Color3.fromRGB(120, 120, 130))
+	-- back + side walls
+	makePart({ Name = "ShopWallBack", Size = Vector3.new(2, 22, 60), CFrame = CFrame.new(cx - 34, 11, cz), Color = Color3.fromRGB(225, 220, 200), Parent = folder })
+	makePart({ Name = "ShopWallN", Size = Vector3.new(70, 22, 2), CFrame = CFrame.new(cx, 11, cz - 30), Color = Color3.fromRGB(225, 220, 200), Parent = folder })
+	makePart({ Name = "ShopWallS", Size = Vector3.new(70, 22, 2), CFrame = CFrame.new(cx, 11, cz + 30), Color = Color3.fromRGB(225, 220, 200), Parent = folder })
+	makePart({ Name = "ShopRoof", Size = Vector3.new(72, 2, 62), CFrame = CFrame.new(cx, 22, cz), Color = Color3.fromRGB(90, 90, 100), Parent = folder })
+	-- a glowing OPEN sign
+	makePart({ Name = "ShopSign", Size = Vector3.new(1, 4, 16), CFrame = CFrame.new(cx + 35, 16, cz), Color = Color3.fromRGB(120, 220, 255), Material = Enum.Material.Neon, Parent = folder })
+	local light = Instance.new("PointLight")
+	light.Brightness = 1.5
+	light.Range = 40
+	light.Parent = folder:FindFirstChild("ShopRoof")
+
+	-- vending machines along the back wall, one per shop item
+	for index, item in Config.Shop do
+		local mz = cz - 22 + (index - 1) * 14
+		local machine = makePart({
+			Name = "ShopMachine_" .. item.Id,
+			Size = Vector3.new(4, 10, 6),
+			CFrame = CFrame.new(cx - 30, 5, mz),
+			Color = Color3.fromRGB(40, 50, 80),
+			Parent = folder,
+		})
+		makePart({
+			Name = "Screen",
+			Size = Vector3.new(0.4, 6, 4.5),
+			CFrame = CFrame.new(cx - 27.8, 6, mz),
+			Color = Color3.fromRGB(120, 200, 255),
+			Material = Enum.Material.Neon,
+			Transparency = 0.2,
+			Parent = machine,
+		})
+		local prompt = Instance.new("ProximityPrompt")
+		prompt.Name = "ShopPrompt"
+		prompt.ActionText = "Buy"
+		prompt.ObjectText = item.Name
+		prompt.HoldDuration = 0
+		prompt.MaxActivationDistance = 8
+		prompt.RequiresLineOfSight = false
+		prompt:SetAttribute("ItemId", item.Id)
+		prompt.Parent = machine
+		prompt.Triggered:Connect(function(player)
+			onBuyShop(player, item.Id)
+		end)
+	end
+end
+
+-- ===== bridges =============================================================
+-- Each bridge is a row of segments spanning the gap from the plaza to an area.
+-- Every segment exists on the server; the client shows the first N (the player's
+-- built count) and hides the rest, so it grows as you buy parts. A build prompt
+-- sits at the plaza end.
+
+local function buildBridge(folder, which, fromPos, toPos, onBuyBridge)
+	local conf = Config.Bridges[which]
+	local parts = conf.Parts
+	local from = Vector3.new(fromPos.X, 0, fromPos.Z)
+	local to = Vector3.new(toPos.X, 0, toPos.Z)
+	local total = (to - from)
+	local dir = total.Unit
+	local segLen = total.Magnitude / parts
+
+	local longX = which == "shop" -- shop bridge runs east-west
+	for i = 1, parts do
+		local centre = from + dir * (segLen * (i - 0.5))
+		local seg = makePart({
+			Name = "BridgeSeg",
+			Size = if longX then Vector3.new(segLen + 0.05, 1, 7) else Vector3.new(7, 1, segLen + 0.05),
+			CFrame = CFrame.new(Vector3.new(centre.X, 0, centre.Z)),
+			Color = Color3.fromRGB(120, 120, 125),
+			Material = Enum.Material.Concrete,
+			Parent = folder,
+		})
+		seg:SetAttribute("Bridge", which)
+		seg:SetAttribute("Index", i)
+	end
+
+	-- build prompt at the plaza end
+	local prompt = Instance.new("ProximityPrompt")
+	prompt.Name = "BridgePrompt"
+	prompt.ActionText = "Build"
+	prompt.ObjectText = "🌉 " .. which:upper() .. " Bridge"
+	prompt.HoldDuration = 0
+	prompt.MaxActivationDistance = 12
+	prompt.RequiresLineOfSight = false
+	local anchor = makePart({
+		Name = "BridgeAnchor_" .. which,
+		Size = Vector3.new(6, 3, 6),
+		CFrame = CFrame.new(Vector3.new(from.X, 1.5, from.Z)),
+		Color = Color3.fromRGB(90, 90, 95),
+		Parent = folder,
+	})
+	anchor:SetAttribute("Bridge", which)
+	prompt.Parent = anchor
+	prompt.Triggered:Connect(function(player)
+		onBuyBridge(player, which)
+	end)
+end
+
+-- ===== build everything ====================================================
+
+function TreeBuilder.Build(onBuy, onBuyBridge, onBuyShop)
+	for _, legacyName in { "Baseplate", "SpawnPlaza", "MainIsland", "GoldenIsland", "GreenIsland", "RebirthBridge", "UpgradeTree" } do
 		local legacy = workspace:FindFirstChild(legacyName)
 		if legacy then
 			legacy:Destroy()
@@ -194,15 +275,12 @@ function TreeBuilder.Build(onBuy)
 	local folder = Instance.new("Folder")
 	folder.Name = "UpgradeTree"
 
-	buildIslands(folder)
+	-- plaza + areas
+	plate(folder, "Plaza", 0, 0, 90, 90, Color3.fromRGB(181, 166, 219))
+	plate(folder, "GoldPlatform", 0, 115, 90, 90, Color3.fromRGB(242, 199, 64))
+	plate(folder, "GreenPlatform", 0, -115, 90, 90, Color3.fromRGB(120, 200, 110))
 
-	for _, treeNode in Config.Tree do
-		buildPad(treeNode, folder, onBuy)
-		local parent = treeNode.Requires and Config.NodeById[treeNode.Requires]
-		if parent then
-			buildPath(parent, treeNode, folder)
-		end
-	end
+	-- pads
 	for _, treeNode in Config.RebirthTree do
 		buildPad(treeNode, folder, onBuy)
 		local parent = treeNode.Requires and Config.NodeById[treeNode.Requires]
@@ -210,7 +288,6 @@ function TreeBuilder.Build(onBuy)
 			buildPath(parent, treeNode, folder)
 		end
 	end
-
 	for _, treeNode in Config.AutomationTree do
 		buildPad(treeNode, folder, onBuy)
 		local parent = treeNode.Requires and Config.NodeById[treeNode.Requires]
@@ -219,13 +296,15 @@ function TreeBuilder.Build(onBuy)
 		end
 	end
 
-	buildAltar(folder)
-
-	-- No portals: the three islands are flush, so you simply walk across the
-	-- seams. Locked islands are hidden and non-collidable per-player (handled
-	-- client-side), so you can't reach Gold/Green until you've unlocked them.
-
 	buildRollTv(folder)
+	buildAltar(folder)
+	buildShop(folder, onBuyShop)
+
+	-- bridges: plaza edge -> area edge
+	buildBridge(folder, "gold", Vector3.new(0, 0, 45), Vector3.new(0, 0, 70), onBuyBridge)
+	buildBridge(folder, "green", Vector3.new(0, 0, -45), Vector3.new(0, 0, -70), onBuyBridge)
+	buildBridge(folder, "shop", Vector3.new(-45, 0, 0), Vector3.new(-80, 0, 0), onBuyBridge)
+
 	folder.Parent = workspace
 end
 

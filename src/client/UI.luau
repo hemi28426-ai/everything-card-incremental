@@ -183,14 +183,14 @@ function UI:BuildRollTV()
 	local gui = create("SurfaceGui", {
 		Name = "RollTVGui",
 		Adornee = screen,
-		Face = Enum.NormalId.Back, -- +Z face, toward spawn
+		Face = Enum.NormalId.Left, -- −X face, toward the player approaching from the plaza
 		SizingMode = Enum.SurfaceGuiSizingMode.PixelsPerStud,
 		PixelsPerStud = 50,
 		Parent = playerGui,
 	})
 	create("Frame", {
 		Size = UDim2.new(1, 0, 1, 0),
-		BackgroundColor3 = Color3.fromRGB(196, 178, 240),
+		BackgroundColor3 = Color3.fromRGB(26, 20, 48), -- dark screen so buttons pop
 		ClipsDescendants = true,
 		Parent = gui,
 	})
@@ -200,7 +200,7 @@ function UI:BuildRollTV()
 		Size = UDim2.new(1, 0, 0.11, 0),
 		Font = Enum.Font.GothamBlack,
 		TextScaled = true,
-		TextColor3 = Color3.fromRGB(120, 60, 200),
+		TextColor3 = Color3.fromRGB(210, 170, 255),
 		Text = "CARD OPENER 3000",
 		Parent = gui,
 	})
@@ -209,7 +209,7 @@ function UI:BuildRollTV()
 	local holder = create("Frame", {
 		Position = UDim2.new(0.04, 0, 0.16, 0),
 		Size = UDim2.new(0.34, 0, 0.78, 0),
-		BackgroundColor3 = Color3.fromRGB(120, 80, 210),
+		BackgroundColor3 = Color3.fromRGB(40, 30, 70),
 		Parent = gui,
 	})
 	addCorner(holder, UDim.new(0, 16))
@@ -224,14 +224,14 @@ function UI:BuildRollTV()
 		Font = Enum.Font.GothamBlack,
 		TextScaled = true,
 		TextXAlignment = Enum.TextXAlignment.Left,
-		TextColor3 = Color3.fromRGB(70, 40, 160),
+		TextColor3 = Color3.fromRGB(220, 200, 255),
 		Text = "",
 		Parent = gui,
 	})
 	create("Frame", {
 		Position = UDim2.new(0.42, 0, 0.3, 0),
 		Size = UDim2.new(0.54, 0, 0.008, 0),
-		BackgroundColor3 = Color3.fromRGB(40, 20, 80),
+		BackgroundColor3 = Color3.fromRGB(150, 120, 220),
 		BorderSizePixel = 0,
 		Parent = gui,
 	})
@@ -298,7 +298,8 @@ function UI:BuildRollTV()
 		self.Callbacks.OnToggleAuto()
 	end)
 
-	-- Fast Auto (gamepass)
+	-- Morphing button: "Buy Auto" (tokens) until Automation is unlocked, then the
+	-- FAST AUTO gamepass.
 	local fastBtn = create("TextButton", {
 		Position = UDim2.new(0.7, 0, 0.74, 0),
 		Size = UDim2.new(0.26, 0, 0.13, 0),
@@ -312,7 +313,11 @@ function UI:BuildRollTV()
 	addCorner(fastBtn, UDim.new(0, 12))
 	self.TVFastButton = fastBtn
 	fastBtn.Activated:Connect(function()
-		self.Callbacks.OnPromptFastAuto()
+		if self.State and not self.State.AutomationUnlocked then
+			self.Callbacks.OnBuyAutomation()
+		else
+			self.Callbacks.OnPromptFastAuto()
+		end
 	end)
 
 	self:SetTVIdle()
@@ -414,11 +419,22 @@ function UI:UpdateTV()
 	self.TVSpeedButton.Text = ("Roll Speed  Lv %d\n🪙 %s"):format(state.RollSpeedLevel or 0, Format(cost))
 	self.TVSpeedButton.BackgroundColor3 = if state.Coins >= cost then Color3.fromRGB(150, 120, 220) else COLORS.Disabled
 
+	local unlocked = state.AutomationUnlocked == true
 	local on = state.AutoOn == true
-	self.TVAutoButton.Text = on and "AUTO: ON" or "AUTO: OFF"
-	self.TVAutoButton.BackgroundColor3 = if on then COLORS.Green else COLORS.Disabled
+	if not unlocked then
+		self.TVAutoButton.Text = "AUTO 🔒"
+		self.TVAutoButton.BackgroundColor3 = COLORS.Disabled
+	else
+		self.TVAutoButton.Text = on and "AUTO: ON" or "AUTO: OFF"
+		self.TVAutoButton.BackgroundColor3 = if on then COLORS.Green else COLORS.Disabled
+	end
 
-	if state.HasFastAuto then
+	if not unlocked then
+		self.TVFastButton.Text = ("Buy Auto\n⭐ %d"):format(Config.AutomationTokenCost)
+		self.TVFastButton.BackgroundColor3 = if (state.RebirthTokens or 0) >= Config.AutomationTokenCost
+			then Color3.fromRGB(255, 200, 80)
+			else COLORS.Disabled
+	elseif state.HasFastAuto then
 		self.TVFastButton.Text = "⚡ FAST ✓"
 		self.TVFastButton.BackgroundColor3 = COLORS.Green
 	else
@@ -1147,28 +1163,19 @@ function UI:BuildPadSurfaces()
 		gui.Enabled = false
 	end
 
-	-- the gold island stays hidden (and unwalkable) until your first rebirth;
-	-- the green island until you buy Automation Unlock. Hidden immediately so
-	-- they're invisible from the very first frame, before any state arrives.
-	self.GoldenParts = {}
-	self.GreenParts = {}
-	local goldIsland = tree:FindFirstChild("GoldenIsland")
-	if goldIsland and goldIsland:IsA("BasePart") then
-		table.insert(self.GoldenParts, goldIsland)
-	end
-	local greenIsland = tree:FindFirstChild("GreenIsland")
-	if greenIsland and greenIsland:IsA("BasePart") then
-		table.insert(self.GreenParts, greenIsland)
-	end
-
-	-- hide both groups up front (state-driven reveal happens in UpdatePads)
-	for _, part in self.GoldenParts do
-		part.LocalTransparencyModifier = 1
-		part.CanCollide = false
-	end
-	for _, part in self.GreenParts do
-		part.LocalTransparencyModifier = 1
-		part.CanCollide = false
+	-- collect bridge segments per-player so each only sees/walks the parts they've
+	-- built. Each starts hidden + non-collidable; UpdateBridges reveals them.
+	self.BridgeSegs = { gold = {}, green = {}, shop = {} }
+	for _, part in tree:GetChildren() do
+		if part.Name == "BridgeSeg" then
+			local which = part:GetAttribute("Bridge")
+			local index = part:GetAttribute("Index")
+			if self.BridgeSegs[which] and index then
+				self.BridgeSegs[which][index] = part
+				part.LocalTransparencyModifier = 1
+				part.CanCollide = false
+			end
+		end
 	end
 
 	-- the rebirth altar: live progress text + client-side confirm
@@ -1359,53 +1366,36 @@ local function setPadVisible(entry, visible)
 	entry.Gui.Enabled = visible
 end
 
--- Show or hide an island's parts. `flag` tracks whether we've already revealed
--- it, so the fade-in only plays once (on the transition from locked to unlocked).
-function UI:RevealIsland(parts, unlocked, flag)
-	if not parts then
+-- Per-player bridge reveal: show + make walkable the parts you've built, hide
+-- the rest (you fall through the gap until you finish the bridge).
+function UI:UpdateBridges()
+	if not self.BridgeSegs then
 		return
 	end
-	local firstReveal = unlocked and not self[flag]
-	for _, part in parts do
-		part.CanCollide = unlocked
-		for _, descendant in part:GetDescendants() do
-			if descendant:IsA("SurfaceGui") then
-				descendant.Enabled = unlocked
-			end
+	local bridges = (self.State and self.State.Bridges) or {}
+	for which, segs in self.BridgeSegs do
+		local built = bridges[which] or 0
+		for index, part in segs do
+			local on = index <= built
+			part.CanCollide = on
+			part.LocalTransparencyModifier = if on then 0 else 1
 		end
-		if not unlocked then
-			part.LocalTransparencyModifier = 1
-		elseif firstReveal then
-			part.LocalTransparencyModifier = 1
-			TweenService:Create(part, TweenInfo.new(1.2, Enum.EasingStyle.Quad), {
-				LocalTransparencyModifier = 0,
-			}):Play()
-		else
-			part.LocalTransparencyModifier = 0
-		end
-	end
-	if unlocked then
-		self[flag] = true
 	end
 end
 
 function UI:UpdatePads()
 	local state = self.State
-	local goldUnlocked = state.Rebirths >= 1
-	local greenUnlocked = state.AutomationUnlocked
+	local automationUnlocked = state.AutomationUnlocked == true
 
-	-- reveal/hide the gold & green islands (per-player, local only). The first
-	-- time an island unlocks we fade it in; after that we just keep it shown.
-	self:RevealIsland(self.GoldenParts, goldUnlocked, "GoldShown")
-	self:RevealIsland(self.GreenParts, greenUnlocked, "GreenShown")
+	self:UpdateBridges()
 
 	for nodeId, entry in self.Pads do
 		local treeNode = Config.NodeById[nodeId]
 		local levels = if treeNode.IsRebirth then state.RebirthUpgrades else state.Upgrades
 		local level = levels[nodeId] or 0
+		-- show once the prerequisite is owned; automation pads also need Automation
 		local unlocked = (not treeNode.Requires or (levels[treeNode.Requires] or 0) >= 1)
-			and (not treeNode.IsRebirth or goldUnlocked)
-			and (not treeNode.IsAutomation or greenUnlocked)
+			and (not treeNode.IsAutomation or automationUnlocked)
 
 		setPadVisible(entry, unlocked)
 		if not unlocked then
