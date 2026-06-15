@@ -3,7 +3,11 @@
 -- decides every roll, purchase, and coin; the client just displays them.
 
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local MarketplaceService = game:GetService("MarketplaceService")
+local Players = game:GetService("Players")
 
+local Shared = ReplicatedStorage:WaitForChild("Shared")
+local Config = require(Shared:WaitForChild("Config"))
 local UI = require(script.Parent:WaitForChild("UI"))
 local Cards = require(script.Parent:WaitForChild("Cards"))
 
@@ -18,6 +22,7 @@ local sellCardRemote = remotes:WaitForChild("SellCard")
 local setAutoSellRemote = remotes:WaitForChild("SetAutoSell")
 local toggleAutoRemote = remotes:WaitForChild("ToggleAuto")
 local backpackRemote = remotes:WaitForChild("UpgradeBackpack")
+local buyRollSpeedRemote = remotes:WaitForChild("BuyRollSpeed")
 local rebirthRemote = remotes:WaitForChild("Rebirth")
 local setAutoRebirthRemote = remotes:WaitForChild("SetAutoRebirth")
 local collectionViewRemote = remotes:WaitForChild("CollectionView")
@@ -68,6 +73,14 @@ ui = UI.new({
 	OnUpgradeBackpack = function()
 		backpackRemote:FireServer()
 	end,
+	OnBuyRollSpeed = function()
+		buyRollSpeedRemote:FireServer()
+	end,
+	OnPromptFastAuto = function()
+		pcall(function()
+			MarketplaceService:PromptGamePassPurchase(Players.LocalPlayer, Config.Gamepass.FastAuto)
+		end)
+	end,
 	OnRebirth = function()
 		rebirthRemote:FireServer()
 	end,
@@ -91,6 +104,11 @@ end)
 
 rollResultRemote.OnClientEvent:Connect(function(payload)
 	cards:ShowRollResult(payload)
+	-- show the pulled card on the TV (the best one of the result)
+	if payload.Cards and #payload.Cards > 0 then
+		local best = payload.Cards[1]
+		ui:ShowTVCard(best)
+	end
 end)
 
 tickerRemote.OnClientEvent:Connect(function(text)

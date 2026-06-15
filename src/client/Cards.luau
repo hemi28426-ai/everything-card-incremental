@@ -464,18 +464,13 @@ function Cards:ShowRollResult(payload)
 		self.RevealSound:Play()
 	end
 
-	-- Auto-rolls collapse to a single summary toast per batch (huge pulls still
-	-- get a splash, but throttled). Manual rolls always get the splash.
-	if payload.Auto then
-		if isHuge and now - (self.LastSplash or 0) > 0.6 then
-			self.LastSplash = now
-			self:ShowSplash(rollCards, total, 3)
-		else
-			self:ShowToast(bestCard, total)
-		end
+	-- The card itself is revealed on the CARD OPENER TV now; here we just drop a
+	-- corner toast for history/feedback (throttled for fast auto-rolling).
+	if payload.Auto and now - (self.LastToast or 0) < 0.15 then
 		return
 	end
-	self:ShowSplash(rollCards, total, if isExciting then 4.5 else 2.2)
+	self.LastToast = now
+	self:ShowToast(bestCard, total)
 end
 
 return Cards

@@ -134,79 +134,19 @@ function UI:Build()
 		Parent = screenGui,
 	})
 
-	-- ROLL button
-	local rollButton = create("TextButton", {
+	-- Rolling lives on the CARD OPENER TV now (UI:BuildRollTV), not the HUD.
+	-- A small hint nudges new players toward it.
+	self.RollHint = create("TextLabel", {
 		AnchorPoint = Vector2.new(0.5, 1),
-		Position = UDim2.new(0.5, 0, 1, -24),
-		Size = UDim2.fromOffset(230, 84),
-		BackgroundColor3 = COLORS.Purple,
-		Font = Enum.Font.GothamBlack,
-		TextSize = 30,
-		TextColor3 = COLORS.Text,
-		Text = "ROLL",
-		AutoButtonColor = true,
-		Parent = screenGui,
-	})
-	addCorner(rollButton, UDim.new(0, 18))
-	create("UIStroke", { Color = Color3.fromRGB(210, 170, 255), Thickness = 3, Parent = rollButton })
-	create("UIGradient", {
-		Color = ColorSequence.new(Color3.fromRGB(170, 110, 255), Color3.fromRGB(110, 50, 220)),
-		Rotation = 90,
-		Parent = rollButton,
-	})
-	self.RollButton = rollButton
-
-	self.MultiBadge = create("TextLabel", {
-		BackgroundColor3 = COLORS.Gold,
-		AnchorPoint = Vector2.new(1, 0),
-		Position = UDim2.new(1, 6, 0, -6),
-		Size = UDim2.fromOffset(40, 22),
-		Font = Enum.Font.GothamBlack,
-		TextSize = 14,
-		TextColor3 = Color3.fromRGB(60, 40, 0),
-		Text = "x2",
-		Visible = false,
-		Parent = rollButton,
-	})
-	addCorner(self.MultiBadge, UDim.new(0, 8))
-
-	-- cooldown fill (shrinks left as cooldown runs)
-	self.CooldownFill = create("Frame", {
-		BackgroundColor3 = Color3.fromRGB(0, 0, 0),
-		BackgroundTransparency = 0.55,
-		AnchorPoint = Vector2.new(1, 1),
-		Position = UDim2.new(1, 0, 1, 0),
-		Size = UDim2.new(0, 0, 1, 0),
-		ZIndex = 2,
-		Parent = rollButton,
-	})
-	addCorner(self.CooldownFill, UDim.new(0, 18))
-
-	local rollScale = create("UIScale", { Parent = rollButton })
-	rollButton.Activated:Connect(function()
-		rollScale.Scale = 0.92
-		TweenService:Create(rollScale, TweenInfo.new(0.2, Enum.EasingStyle.Back, Enum.EasingDirection.Out), { Scale = 1 }):Play()
-		self.ClickSound:Play()
-		self.Callbacks.OnRoll()
-	end)
-
-	-- AUTO toggle (appears once unlocked)
-	self.AutoButton = create("TextButton", {
-		AnchorPoint = Vector2.new(0, 1),
-		Position = UDim2.new(0.5, 130, 1, -42),
-		Size = UDim2.fromOffset(110, 48),
-		BackgroundColor3 = COLORS.Disabled,
+		Position = UDim2.new(0.5, 0, 1, -16),
+		Size = UDim2.fromOffset(360, 26),
+		BackgroundTransparency = 1,
 		Font = Enum.Font.GothamBold,
-		TextSize = 16,
-		TextColor3 = COLORS.Text,
-		Text = "AUTO: OFF",
-		Visible = false,
+		TextSize = 15,
+		TextColor3 = COLORS.TextDim,
+		Text = "Walk up to the CARD OPENER and press Roll →",
 		Parent = screenGui,
 	})
-	addCorner(self.AutoButton, UDim.new(0, 14))
-	self.AutoButton.Activated:Connect(function()
-		self.Callbacks.OnToggleAuto()
-	end)
 
 	self:BuildCollection()
 	self:BuildSettings()
@@ -214,10 +154,276 @@ function UI:Build()
 	task.spawn(function()
 		self:BuildPadSurfaces()
 	end)
+	task.spawn(function()
+		self:BuildRollTV()
+	end)
 
 	-- dev cheat menu (only for Hemi286)
 	if Players.LocalPlayer.UserId == 508290827 then
 		self:BuildDevCheat()
+	end
+end
+
+-- ===== the CARD OPENER TV ==================================================
+-- A per-player SurfaceGui adorned to the purple RollTV part: the card display,
+-- the Roll button, the roll-speed upgrade, and the auto-roll controls. Clickable
+-- in the world because the buttons are real GuiButtons on the surface.
+
+function UI:BuildRollTV()
+	local playerGui = Players.LocalPlayer:WaitForChild("PlayerGui")
+	local tree = workspace:WaitForChild("UpgradeTree", 30)
+	if not tree then
+		return
+	end
+	local screen = tree:WaitForChild("RollTV", 20)
+	if not screen then
+		return
+	end
+
+	local gui = create("SurfaceGui", {
+		Name = "RollTVGui",
+		Adornee = screen,
+		Face = Enum.NormalId.Back, -- +Z face, toward spawn
+		SizingMode = Enum.SurfaceGuiSizingMode.PixelsPerStud,
+		PixelsPerStud = 50,
+		Parent = playerGui,
+	})
+	create("Frame", {
+		Size = UDim2.new(1, 0, 1, 0),
+		BackgroundColor3 = Color3.fromRGB(196, 178, 240),
+		ClipsDescendants = true,
+		Parent = gui,
+	})
+	create("TextLabel", {
+		BackgroundTransparency = 1,
+		Position = UDim2.new(0, 0, 0.02, 0),
+		Size = UDim2.new(1, 0, 0.11, 0),
+		Font = Enum.Font.GothamBlack,
+		TextScaled = true,
+		TextColor3 = Color3.fromRGB(120, 60, 200),
+		Text = "CARD OPENER 3000",
+		Parent = gui,
+	})
+
+	-- card holder (left)
+	local holder = create("Frame", {
+		Position = UDim2.new(0.04, 0, 0.16, 0),
+		Size = UDim2.new(0.34, 0, 0.78, 0),
+		BackgroundColor3 = Color3.fromRGB(120, 80, 210),
+		Parent = gui,
+	})
+	addCorner(holder, UDim.new(0, 16))
+	self.TVCardStroke = create("UIStroke", { Color = Color3.fromRGB(220, 120, 255), Thickness = 3, Parent = holder })
+	self.TVCardHolder = holder
+
+	-- big rolled id (top right) + underline
+	self.TVIdLabel = create("TextLabel", {
+		BackgroundTransparency = 1,
+		Position = UDim2.new(0.42, 0, 0.16, 0),
+		Size = UDim2.new(0.54, 0, 0.13, 0),
+		Font = Enum.Font.GothamBlack,
+		TextScaled = true,
+		TextXAlignment = Enum.TextXAlignment.Left,
+		TextColor3 = Color3.fromRGB(70, 40, 160),
+		Text = "",
+		Parent = gui,
+	})
+	create("Frame", {
+		Position = UDim2.new(0.42, 0, 0.3, 0),
+		Size = UDim2.new(0.54, 0, 0.008, 0),
+		BackgroundColor3 = Color3.fromRGB(40, 20, 80),
+		BorderSizePixel = 0,
+		Parent = gui,
+	})
+
+	-- ROLL button (clickable on the surface)
+	local rollBtn = create("TextButton", {
+		Position = UDim2.new(0.42, 0, 0.35, 0),
+		Size = UDim2.new(0.54, 0, 0.2, 0),
+		BackgroundColor3 = Color3.fromRGB(120, 160, 220),
+		Font = Enum.Font.GothamBlack,
+		TextScaled = true,
+		TextColor3 = Color3.fromRGB(20, 30, 90),
+		Text = "Roll",
+		Parent = gui,
+	})
+	addCorner(rollBtn, UDim.new(0, 14))
+	create("UIStroke", { Color = Color3.fromRGB(40, 60, 160), Thickness = 3, Parent = rollBtn })
+	self.TVRollButton = rollBtn
+	self.TVRollCooldown = create("Frame", {
+		AnchorPoint = Vector2.new(1, 1),
+		Position = UDim2.new(1, 0, 1, 0),
+		Size = UDim2.new(0, 0, 1, 0),
+		BackgroundColor3 = Color3.fromRGB(0, 0, 0),
+		BackgroundTransparency = 0.6,
+		Parent = rollBtn,
+	})
+	addCorner(self.TVRollCooldown, UDim.new(0, 14))
+	rollBtn.Activated:Connect(function()
+		self.ClickSound:Play()
+		self.Callbacks.OnRoll()
+	end)
+
+	-- Roll Speed upgrade (coins)
+	local speedBtn = create("TextButton", {
+		Position = UDim2.new(0.42, 0, 0.58, 0),
+		Size = UDim2.new(0.54, 0, 0.13, 0),
+		BackgroundColor3 = Color3.fromRGB(150, 120, 220),
+		Font = Enum.Font.GothamBold,
+		TextScaled = true,
+		TextColor3 = Color3.fromRGB(255, 255, 255),
+		Text = "Roll Speed",
+		Parent = gui,
+	})
+	addCorner(speedBtn, UDim.new(0, 12))
+	self.TVSpeedButton = speedBtn
+	speedBtn.Activated:Connect(function()
+		self.Callbacks.OnBuyRollSpeed()
+	end)
+
+	-- Auto toggle
+	local autoBtn = create("TextButton", {
+		Position = UDim2.new(0.42, 0, 0.74, 0),
+		Size = UDim2.new(0.26, 0, 0.13, 0),
+		BackgroundColor3 = COLORS.Disabled,
+		Font = Enum.Font.GothamBold,
+		TextScaled = true,
+		TextColor3 = Color3.fromRGB(255, 255, 255),
+		Text = "AUTO: OFF",
+		Parent = gui,
+	})
+	addCorner(autoBtn, UDim.new(0, 12))
+	self.TVAutoButton = autoBtn
+	autoBtn.Activated:Connect(function()
+		self.Callbacks.OnToggleAuto()
+	end)
+
+	-- Fast Auto (gamepass)
+	local fastBtn = create("TextButton", {
+		Position = UDim2.new(0.7, 0, 0.74, 0),
+		Size = UDim2.new(0.26, 0, 0.13, 0),
+		BackgroundColor3 = Color3.fromRGB(255, 180, 60),
+		Font = Enum.Font.GothamBold,
+		TextScaled = true,
+		TextColor3 = Color3.fromRGB(60, 40, 0),
+		Text = "⚡ FAST AUTO",
+		Parent = gui,
+	})
+	addCorner(fastBtn, UDim.new(0, 12))
+	self.TVFastButton = fastBtn
+	fastBtn.Activated:Connect(function()
+		self.Callbacks.OnPromptFastAuto()
+	end)
+
+	self:SetTVIdle()
+	if self.State then
+		self:UpdateTV()
+	end
+end
+
+local function clearCardHolder(holder)
+	for _, child in holder:GetChildren() do
+		if not child:IsA("UICorner") and not child:IsA("UIStroke") then
+			child:Destroy()
+		end
+	end
+end
+
+function UI:SetTVIdle()
+	if not self.TVCardHolder then
+		return
+	end
+	clearCardHolder(self.TVCardHolder)
+	create("TextLabel", {
+		BackgroundTransparency = 1,
+		Size = UDim2.new(1, 0, 1, 0),
+		Font = Enum.Font.GothamBlack,
+		TextScaled = true,
+		TextColor3 = Color3.fromRGB(180, 150, 240),
+		Text = "?",
+		Parent = self.TVCardHolder,
+	})
+	if self.TVIdLabel then
+		self.TVIdLabel.Text = ""
+	end
+end
+
+-- Render one rolled card onto the TV.
+function UI:ShowTVCard(card)
+	if not self.TVCardHolder then
+		return
+	end
+	local tier = Config.TierByName[card.Tier] or Config.Tiers[1]
+	clearCardHolder(self.TVCardHolder)
+	if self.TVCardStroke then
+		self.TVCardStroke.Color = tier.Color
+	end
+
+	if card.UserId and card.UserId > 0 then
+		local avatar = create("ImageLabel", {
+			AnchorPoint = Vector2.new(0.5, 0),
+			Position = UDim2.new(0.5, 0, 0.04, 0),
+			Size = UDim2.new(0.7, 0, 0.46, 0),
+			BackgroundColor3 = Color3.fromRGB(30, 20, 50),
+			Image = ("rbxthumb://type=AvatarHeadShot&id=%d&w=150&h=150"):format(card.UserId),
+			Parent = self.TVCardHolder,
+		})
+		addCorner(avatar, UDim.new(0, 12))
+	end
+	create("TextLabel", {
+		BackgroundTransparency = 1,
+		Position = UDim2.new(0, 0, 0.52, 0),
+		Size = UDim2.new(1, 0, 0.12, 0),
+		Font = Enum.Font.GothamBlack,
+		TextScaled = true,
+		TextColor3 = tier.Color,
+		Text = if card.Tier == "Secret" then "SYSTEM ERROR" else card.Tier:upper(),
+		Parent = self.TVCardHolder,
+	})
+	create("TextLabel", {
+		BackgroundTransparency = 1,
+		Position = UDim2.new(0.04, 0, 0.65, 0),
+		Size = UDim2.new(0.92, 0, 0.11, 0),
+		Font = Enum.Font.GothamBold,
+		TextScaled = true,
+		TextColor3 = Color3.fromRGB(255, 255, 255),
+		Text = card.DisplayName or card.Name or "?",
+		Parent = self.TVCardHolder,
+	})
+	create("TextLabel", {
+		BackgroundTransparency = 1,
+		Position = UDim2.new(0.04, 0, 0.78, 0),
+		Size = UDim2.new(0.92, 0, 0.1, 0),
+		Font = Enum.Font.GothamBold,
+		TextScaled = true,
+		TextColor3 = Color3.fromRGB(255, 230, 120),
+		Text = "+" .. Format(card.Boost or 0) .. "/s",
+		Parent = self.TVCardHolder,
+	})
+	if self.TVIdLabel then
+		self.TVIdLabel.Text = tostring(card.UserId or "")
+	end
+end
+
+function UI:UpdateTV()
+	local state = self.State
+	if not state or not self.TVSpeedButton then
+		return
+	end
+	local cost = state.RollSpeedCost or 0
+	self.TVSpeedButton.Text = ("Roll Speed  Lv %d\n🪙 %s"):format(state.RollSpeedLevel or 0, Format(cost))
+	self.TVSpeedButton.BackgroundColor3 = if state.Coins >= cost then Color3.fromRGB(150, 120, 220) else COLORS.Disabled
+
+	local on = state.AutoOn == true
+	self.TVAutoButton.Text = on and "AUTO: ON" or "AUTO: OFF"
+	self.TVAutoButton.BackgroundColor3 = if on then COLORS.Green else COLORS.Disabled
+
+	if state.HasFastAuto then
+		self.TVFastButton.Text = "⚡ FAST ✓"
+		self.TVFastButton.BackgroundColor3 = COLORS.Green
+	else
+		self.TVFastButton.Text = "⚡ FAST AUTO"
+		self.TVFastButton.BackgroundColor3 = Color3.fromRGB(255, 180, 60)
 	end
 end
 
@@ -1281,8 +1487,11 @@ function UI:ShowTicker(text)
 end
 
 function UI:StartCooldown(duration)
-	self.CooldownFill.Size = UDim2.new(1, 0, 1, 0)
-	TweenService:Create(self.CooldownFill, TweenInfo.new(duration, Enum.EasingStyle.Linear), {
+	if not self.TVRollCooldown then
+		return
+	end
+	self.TVRollCooldown.Size = UDim2.new(1, 0, 1, 0)
+	TweenService:Create(self.TVRollCooldown, TweenInfo.new(duration, Enum.EasingStyle.Linear), {
 		Size = UDim2.new(0, 0, 1, 0),
 	}):Play()
 end
@@ -1330,17 +1539,11 @@ function UI:Update(state)
 
 	self.TokenLabel.Text = ("⭐ Tokens: %s  •  Rebirths: %s"):format(Format(state.RebirthTokens), Format(state.Rebirths))
 
-	local cardsPerRoll = math.floor(state.Stats.MultiRoll * state.Stats.CardOutputMult + (state.Stats.CardBonus or 0))
-	self.MultiBadge.Visible = cardsPerRoll > 1
-	self.MultiBadge.Text = "x" .. cardsPerRoll
+	self:UpdateTV()
 
 	if self.RebirthOverlay and self.RebirthOverlay.Visible then
 		self:RefreshRebirthModal()
 	end
-
-	self.AutoButton.Visible = state.Stats.AutoUnlocked
-	self.AutoButton.Text = state.AutoOn and "AUTO: ON" or "AUTO: OFF"
-	self.AutoButton.BackgroundColor3 = if state.AutoOn then COLORS.Green else COLORS.Disabled
 
 	self.SlotsLabel.Text = ("CARDS %d/%d  —  equipped %d/%d"):format(
 		state.CardCount,

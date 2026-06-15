@@ -4,6 +4,7 @@
 
 local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local MarketplaceService = game:GetService("MarketplaceService")
 
 local Shared = ReplicatedStorage:WaitForChild("Shared")
 local Config = require(Shared:WaitForChild("Config"))
@@ -36,6 +37,7 @@ local sellCardRemote = makeRemote("SellCard")
 local setAutoSellRemote = makeRemote("SetAutoSell")
 local toggleAutoRemote = makeRemote("ToggleAuto")
 local backpackRemote = makeRemote("UpgradeBackpack")
+local buyRollSpeedRemote = makeRemote("BuyRollSpeed")
 local rebirthRemote = makeRemote("Rebirth")
 local setAutoRebirthRemote = makeRemote("SetAutoRebirth")
 local collectionViewRemote = makeRemote("CollectionView")
@@ -117,6 +119,10 @@ local function buildState(session, includeCards)
 		AutomationUnlocked = data.AutomationUnlocked,
 		AutoRebirthOn = data.AutoRebirthOn,
 		AutoRebirthTokens = data.AutoRebirthTokens,
+		RollSpeedLevel = data.RollSpeedLevel,
+		RollSpeedCost = Config.GetRollSpeedCost(data.RollSpeedLevel),
+		HasFastAuto = session.HasFastAuto == true,
+		AutoInterval = if session.HasFastAuto then Config.Roll.AutoIntervalFast else Config.Roll.AutoInterval,
 		Stats = session.Stats,
 		CoinsPerSec = computeRate(data, session.Stats),
 		Rebirths = data.Rebirths,
@@ -213,7 +219,10 @@ local function performRoll(player, isAuto)
 		if now < session.NextAutoAt then
 			return
 		end
-		session.NextAutoAt = now + stats.AutoCooldown
+		-- auto-roll runs at a FIXED interval (3s, or near-instant with the FAST
+		-- AUTO gamepass) — it is NOT sped up by your manual roll-speed upgrade
+		local interval = if session.HasFastAuto then Config.Roll.AutoIntervalFast else Config.Roll.AutoInterval
+		session.NextAutoAt = now + interval
 	else
 		if now < session.NextRollAt then
 			return
@@ -221,12 +230,8 @@ local function performRoll(player, isAuto)
 		session.NextRollAt = now + stats.RollCooldown
 	end
 
-	local count = stats.MultiRoll
-	if isAuto and not stats.AutoMulti then
-		count = 1
-	end
-	count = count * stats.CardOutputMult + stats.CardBonus -- golden tree doublers + flat bonus
-	count = math.floor(count)
+	-- one card per roll, always
+	local count = 1
 
 	local results = {}
 	local announceThreshold = Config.TierByName.Mythic.Index
@@ -319,7 +324,7 @@ local function onPlayerAdded(player)
 
 	leaderstats.Parent = player
 
-	local stats = Config.ComputeStats(data.Upgrades, data.RebirthUpgrades)
+	local stats = Config.ComputeStats(data.RebirthUpgrades, data.RollSpeedLevel)
 	local session = {
 		Data = data,
 		CanSave = loadedSafely,
@@ -327,10 +332,22 @@ local function onPlayerAdded(player)
 		NextRollAt = 0,
 		NextAutoAt = 0,
 		CardsDirty = false,
+		HasFastAuto = false,
 		CoinsValue = coinsValue,
 		RollsValue = rollsValue,
 	}
 	sessions[player] = session
+
+	-- does this player own the FAST AUTO gamepass?
+	task.spawn(function()
+		local ok, owns = pcall(function()
+			return MarketplaceService:UserOwnsGamePassAsync(player.UserId, Config.Gamepass.FastAuto)
+		end)
+		if ok and owns and sessions[player] then
+			session.HasFastAuto = true
+			pushState(player, false)
+		end
+	end)
 
 	-- offline earnings
 	if stats.OfflineUnlocked and data.LastSeen > 0 then
@@ -429,7 +446,7 @@ local function onBuyUpgrade(player, nodeId)
 		data.AutomationUnlocked = true
 	end
 
-	session.Stats = Config.ComputeStats(data.Upgrades, data.RebirthUpgrades)
+	session.Stats = Config.ComputeStats(data.RebirthUpgrades, data.RollSpeedLevel)
 	pushState(player, false)
 end
 
@@ -670,7 +687,7 @@ local function doRebirth(player, session)
 	data.Rebirths += 1
 	data.RebirthTokens += tokens
 	data.Upgrades = {}
-	session.Stats = Config.ComputeStats(data.Upgrades, data.RebirthUpgrades)
+	session.Stats = Config.ComputeStats(data.RebirthUpgrades, data.RollSpeedLevel)
 	data.Coins = session.Stats.StartCoins
 
 	announce(("🌟 %s rebirthed and earned %d token%s!"):format(player.Name, tokens, tokens == 1 and "" or "s"))
@@ -709,63 +726,35 @@ backpackRemote.OnServerEvent:Connect(function(player)
 	end
 end)
 
--- ===== automation (green island) ==========================================
-
--- Which purple-tree upgrades each auto-buyer category covers.
-local AUTOBUY_MATCHERS = {
-	rollspeed = function(node)
-		return node.Effect == "RollSpeed" or node.Effect == "InfHaste"
-	end,
-	multi = function(node)
-		return node.Effect == "MultiRoll" or node.Effect == "AutoUnlock"
-			or node.Effect == "AutoSpeed" or node.Effect == "AutoMulti"
-	end,
-	coin = function(node)
-		return node.Effect == "CoinMult" or node.Effect == "InfCoin"
-	end,
-	slot = function(node)
-		return node.Effect == "Slot"
-	end,
-	dupe = function(node)
-		return node.Effect == "DupeValue"
-	end,
-	luck = function(node)
-		return node.Effect == "Luck" or node.Effect == "InfLuck" or node.Effect == "GodHunter"
-	end,
-	fresh = function(node)
-		return node.Effect == "FreshScan"
-	end,
-	endgame = function(node)
-		return node.Branch == "Endgame"
-	end,
-}
-
--- Buy the single cheapest affordable purple-tree node matching `matcher`
--- (respecting prerequisites and max levels). `reserve` coins are kept untouched
--- so auto-buying can't starve a pending auto-rebirth. Returns true if it bought.
-local function autoBuyCategory(session, matcher, reserve)
+-- Buy one manual roll-speed level (paid in coins) right on the TV.
+buyRollSpeedRemote.OnServerEvent:Connect(function(player)
+	local session = sessions[player]
+	if not session then
+		return
+	end
 	local data = session.Data
-	local bestNode, bestCost = nil, nil
-	for _, node in Config.Tree do
-		if matcher(node) then
-			local level = data.Upgrades[node.Id] or 0
-			local maxedOut = node.MaxLevel and level >= node.MaxLevel
-			local prereqMet = not node.Requires or (data.Upgrades[node.Requires] or 0) >= 1
-			if not maxedOut and prereqMet then
-				local cost = Config.GetNodeCost(node, level)
-				if data.Coins - cost >= reserve and (not bestCost or cost < bestCost) then
-					bestNode, bestCost = node, cost
-				end
-			end
+	local cost = Config.GetRollSpeedCost(data.RollSpeedLevel)
+	if data.Coins < cost then
+		return
+	end
+	data.Coins -= cost
+	data.RollSpeedLevel += 1
+	session.Stats = Config.ComputeStats(data.RebirthUpgrades, data.RollSpeedLevel)
+	pushState(player, false)
+end)
+
+-- Flip on FAST AUTO the moment the gamepass is bought.
+MarketplaceService.PromptGamePassPurchaseFinished:Connect(function(player, gamePassId, wasPurchased)
+	if wasPurchased and gamePassId == Config.Gamepass.FastAuto then
+		local session = sessions[player]
+		if session then
+			session.HasFastAuto = true
+			pushState(player, false)
 		end
 	end
-	if bestNode then
-		data.Coins -= bestCost
-		data.Upgrades[bestNode.Id] = (data.Upgrades[bestNode.Id] or 0) + 1
-		return true
-	end
-	return false
-end
+end)
+
+-- ===== automation island (auto-equip / auto-sell / auto-rebirth) ==========
 
 -- Run one automation pass for a player. Returns true if anything changed.
 local function runAutomation(player, session)
@@ -776,37 +765,14 @@ local function runAutomation(player, session)
 	local data = session.Data
 	local changed = false
 
-	-- Auto-rebirth has priority. If it's ready, fire it first; otherwise reserve
-	-- the coins it needs so the auto-buyers below can't spend the player back
-	-- under the threshold and stall it forever.
-	local reserve = 0
 	if stats.AutoRebirthUnlocked and data.AutoRebirthOn then
 		local threshold = math.max(1, data.AutoRebirthTokens or 10)
 		if Config.GetRebirthTokens(data.Coins) >= threshold and hasLegendaryPlus(data) then
 			if doRebirth(player, session) > 0 then
-				session.Stats = Config.ComputeStats(data.Upgrades, data.RebirthUpgrades)
-				return true -- rebirthed; let the next tick handle buying
+				session.Stats = Config.ComputeStats(data.RebirthUpgrades, data.RollSpeedLevel)
+				return true
 			end
 		end
-		reserve = Config.GetCoinsForTokens(threshold - 1) -- coins needed to reach `threshold`
-	end
-
-	for category in stats.AutoBuy do
-		if category == "backpack" then
-			if buyBackpack(session) then
-				changed = true
-			end
-		else
-			local matcher = AUTOBUY_MATCHERS[category]
-			if matcher and autoBuyCategory(session, matcher, reserve) then
-				changed = true
-			end
-		end
-	end
-
-	if changed then
-		session.Stats = Config.ComputeStats(data.Upgrades, data.RebirthUpgrades)
-		stats = session.Stats
 	end
 
 	if stats.AutoSellUnlocked and sellAllDupes(session) > 0 then
@@ -837,27 +803,25 @@ task.spawn(function()
 	end
 end)
 
--- auto-roller heartbeat
+-- auto-roller heartbeat (TV auto-roll). Available from the start via the AutoOn
+-- toggle; performRoll itself enforces the 3s / gamepass-fast interval.
 task.spawn(function()
 	while true do
-		task.wait(0.25)
+		task.wait(0.2)
 		for player, session in sessions do
-			if session.Stats.AutoUnlocked and session.Data.AutoOn then
+			if session.Data.AutoOn then
 				task.spawn(performRoll, player, true)
 			end
 		end
 	end
 end)
 
--- automation heartbeat (green island). Runs every 0.5s; each player's pace is
--- gated by their own cooldown, which Automation Haste shortens.
+-- automation island heartbeat (auto-equip / auto-sell / auto-rebirth), 1s pace
 task.spawn(function()
 	while true do
-		task.wait(0.5)
-		local now = os.clock()
+		task.wait(1)
 		for player, session in sessions do
-			if session.Stats.AutoCore and now >= (session.NextAutomationAt or 0) then
-				session.NextAutomationAt = now + 3 / (1 + session.Stats.AutoHaste)
+			if session.Stats.AutoCore then
 				if runAutomation(player, session) then
 					session.CardsDirty = true
 					pushState(player, false)

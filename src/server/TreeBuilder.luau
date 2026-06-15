@@ -90,79 +90,26 @@ local function buildPath(fromNode, toNode, folder)
 	})
 end
 
-local function buildTv(folder)
-	-- stand
-	makePart({
-		Name = "TvStand",
-		Size = Vector3.new(4, 3, 2),
-		CFrame = CFrame.new(0, 1.5, -20),
-		Color = Color3.fromRGB(40, 30, 60),
-		Parent = folder,
-	})
-	-- screen body
+-- The roll TV: a plain purple square screen (no stand). The interactive UI on
+-- it — the card, the Roll button, the speed/auto controls — is drawn per-player
+-- by the client (a SurfaceGui adorned to this part), so it's touchable and each
+-- player sees their own card.
+local function buildRollTv(folder)
 	local screen = makePart({
-		Name = "CardTv",
-		Size = Vector3.new(15, 8, 1.2),
-		CFrame = CFrame.new(0, 7, -20),
-		Color = Color3.fromRGB(25, 18, 40),
+		Name = "RollTV",
+		Size = Vector3.new(18, 12, 1),
+		CFrame = CFrame.new(0, 7, -18),
+		Color = Color3.fromRGB(150, 90, 255),
+		Material = Enum.Material.SmoothPlastic,
 		Parent = folder,
 	})
-	-- neon frame
-	makePart({
-		Name = "TvFrame",
-		Size = Vector3.new(15.8, 8.8, 1),
-		CFrame = CFrame.new(0, 7, -20.2),
-		Color = Color3.fromRGB(150, 80, 255),
-		Material = Enum.Material.Neon,
-		Transparency = 0.1,
-		Parent = screen,
-	})
+	screen.Anchored = true
 
 	local glow = Instance.new("PointLight")
 	glow.Color = Color3.fromRGB(170, 110, 255)
-	glow.Brightness = 2
-	glow.Range = 32
+	glow.Brightness = 1.5
+	glow.Range = 26
 	glow.Parent = screen
-
-	local gui = Instance.new("SurfaceGui")
-	gui.Face = Enum.NormalId.Back -- faces spawn
-	gui.SizingMode = Enum.SurfaceGuiSizingMode.PixelsPerStud
-	gui.PixelsPerStud = 40
-	gui.Parent = screen
-
-	local title = Instance.new("TextLabel")
-	title.BackgroundTransparency = 1
-	title.Size = UDim2.new(1, 0, 0, 110)
-	title.Position = UDim2.new(0, 0, 0, 16)
-	title.Font = Enum.Font.GothamBlack
-	title.TextSize = 64
-	title.TextColor3 = Color3.fromRGB(200, 150, 255)
-	title.Text = "EVERYTHING CARDS"
-	title.Parent = gui
-
-	local subtitle = Instance.new("TextLabel")
-	subtitle.BackgroundTransparency = 1
-	subtitle.Size = UDim2.new(1, 0, 0, 40)
-	subtitle.Position = UDim2.new(0, 0, 0, 120)
-	subtitle.Font = Enum.Font.Gotham
-	subtitle.TextSize = 24
-	subtitle.TextColor3 = Color3.fromRGB(150, 140, 180)
-	subtitle.Text = "Every card is a real Roblox account. Press ROLL."
-	subtitle.Parent = gui
-
-	local ticker = Instance.new("TextLabel")
-	ticker.Name = "Ticker"
-	ticker.BackgroundTransparency = 1
-	ticker.Size = UDim2.new(1, -40, 0, 120)
-	ticker.Position = UDim2.new(0, 20, 0, 180)
-	ticker.Font = Enum.Font.GothamBold
-	ticker.TextSize = 30
-	ticker.TextWrapped = true
-	ticker.TextColor3 = Color3.fromRGB(255, 215, 60)
-	ticker.Text = "Big pulls will be announced here..."
-	ticker.Parent = gui
-
-	return ticker
 end
 
 -- All three islands are built at runtime so they can have per-player visibility
@@ -278,9 +225,8 @@ function TreeBuilder.Build(onBuy)
 	-- seams. Locked islands are hidden and non-collidable per-player (handled
 	-- client-side), so you can't reach Gold/Green until you've unlocked them.
 
-	local ticker = buildTv(folder)
+	buildRollTv(folder)
 	folder.Parent = workspace
-	return ticker
 end
 
 return TreeBuilder
