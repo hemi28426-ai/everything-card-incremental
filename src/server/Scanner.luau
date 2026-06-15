@@ -262,18 +262,21 @@ end
 Scanner.LastLookupError = nil
 
 -- Look up many user ids at once -> map userId -> {Username, DisplayName, Verified}.
--- Primary path is RoProxy's BULK users endpoint, which simply OMITS ids that
--- don't exist instead of erroring. That tolerance is essential: most random ids
--- across the 8.5B space are dead, and the engine call
--- (UserService:GetUserInfosByUserIdsAsync) THROWS if even one id in the batch is
--- invalid — which is exactly why the game kept falling back to stub cards.
--- Returns nil only if every path failed (HTTP off AND the engine call threw).
+-- Two tolerant paths, neither of which dies on dead ids (the bug that kept the
+-- game in stub mode):
+--   1) RoProxy's BULK users endpoint — one call, simply omits ids that don't
+--      exist (needs HTTP requests on).
+--   2) Players:GetNameFromUserIdAsync per id — engine API, no HTTP needed, just
+--      errors per dead id (which we skip). Used when RoProxy returns nothing.
+-- Always returns a map (possibly empty); the refill loop decides offline mode.
 function Scanner.LookupUsers(userIds)
 	if #userIds == 0 then
 		return {}
 	end
+	local result = {}
+	local errors = {}
 
-	-- RoProxy bulk POST (tolerant of invalid ids, one call for the whole batch)
+	-- 1) RoProxy bulk POST
 	if httpEnabled ~= false and os.clock() >= proxyDisabledUntil then
 		local body = HttpService:JSONEncode({ userIds = userIds, excludeBannedUsers = false })
 		local ok, response = pcall(function()
@@ -292,7 +295,6 @@ function Scanner.LookupUsers(userIds)
 			if decodeOk and type(decoded) == "table" and type(decoded.data) == "table" then
 				httpEnabled = true
 				proxyFailures = 0
-				local result = {}
 				for _, info in decoded.data do
 					if type(info) == "table" and type(info.id) == "number" then
 						result[info.id] = {
@@ -302,34 +304,35 @@ function Scanner.LookupUsers(userIds)
 						}
 					end
 				end
-				return result
+			else
+				table.insert(errors, "roproxy:bad-json")
 			end
-			Scanner.LastLookupError = "roproxy bad response"
 		else
 			local message = tostring(response)
-			Scanner.LastLookupError = "roproxy: " .. message
+			table.insert(errors, "roproxy:" .. message)
 			if message:find("not enabled") or message:find("Http requests") then
 				httpEnabled = false
 			end
 		end
 	end
 
-	-- Fallback: engine batch. Throws if ANY id is invalid, so this realistically
-	-- only succeeds when HTTP is off and every sampled id happens to be valid.
-	local result = nil
-	local ok, err = pcall(function()
-		local infos = UserService:GetUserInfosByUserIdsAsync(userIds)
-		result = {}
-		for _, info in infos do
-			result[info.Id] = {
-				Username = info.Username,
-				DisplayName = info.DisplayName,
-				Verified = info.HasVerifiedBadge == true,
-			}
+	-- 2) Engine per-id fallback (capped so it can't hammer the API)
+	if next(result) == nil then
+		for index = 1, math.min(#userIds, 10) do
+			local id = userIds[index]
+			local ok, name = pcall(function()
+				return Players:GetNameFromUserIdAsync(id)
+			end)
+			if ok and type(name) == "string" then
+				result[id] = { Username = name, DisplayName = name, Verified = false }
+			elseif not ok then
+				table.insert(errors, "engine:" .. tostring(name))
+			end
 		end
-	end)
-	if not ok then
-		Scanner.LastLookupError = "userservice: " .. tostring(err)
+	end
+
+	if next(result) == nil and #errors > 0 then
+		Scanner.LastLookupError = errors[#errors]
 	end
 	return result
 end

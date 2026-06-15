@@ -372,6 +372,32 @@ function Cards:ShowToast(card, batchCount)
 	end)
 end
 
+-- a plain text toast (used for the "scanning…" notice — not a card)
+function Cards:ShowNotice(message)
+	local toast = create("TextLabel", {
+		BackgroundColor3 = PANEL_COLOR,
+		BackgroundTransparency = 0.15,
+		Size = UDim2.new(0, 250, 0, 30),
+		Font = Enum.Font.GothamBold,
+		TextSize = 13,
+		TextColor3 = Color3.fromRGB(255, 215, 60),
+		TextTruncate = Enum.TextTruncate.AtEnd,
+		Text = message,
+		Parent = self.ToastColumn,
+	})
+	create("UICorner", { CornerRadius = UDim.new(0, 8), Parent = toast })
+	toast.TextTransparency = 1
+	toast.BackgroundTransparency = 1
+	TweenService:Create(toast, TweenInfo.new(0.15), { TextTransparency = 0, BackgroundTransparency = 0.15 }):Play()
+	task.delay(2, function()
+		local tween = TweenService:Create(toast, TweenInfo.new(0.4), { TextTransparency = 1, BackgroundTransparency = 1 })
+		tween.Completed:Once(function()
+			toast:Destroy()
+		end)
+		tween:Play()
+	end)
+end
+
 -- quick colored flash across the whole screen for big pulls
 function Cards:FlashScreen(color)
 	local flash = create("Frame", {
@@ -401,6 +427,16 @@ end
 -- entry point for every roll result from the server
 function Cards:ShowRollResult(payload)
 	local rollCards = payload.Cards
+	-- server couldn't fetch a real account this instant — show a brief notice
+	-- instead of any card (we never show fake "test" cards)
+	if payload.Scanning or not rollCards or #rollCards == 0 then
+		local now = os.clock()
+		if not payload.Auto and now - (self.LastScanNotice or 0) > 2 then
+			self.LastScanNotice = now
+			self:ShowNotice("🔄 Scanning real accounts… try again in a sec")
+		end
+		return
+	end
 	local total = payload.Total or #rollCards
 	local bestIndex = 1
 	local bestCard = rollCards[1]

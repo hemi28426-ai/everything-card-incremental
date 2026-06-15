@@ -231,13 +231,18 @@ local function performRoll(player, isAuto)
 	local results = {}
 	local announceThreshold = Config.TierByName.Mythic.Index
 	for index = 1, count do
-		data.TotalRolls += 1
-		data.RollsBalance += 1
 		-- Lucky Sevens: every 7th all-time roll is forced to at least Rare
-		local forcePool = stats.LuckySevens and data.TotalRolls % 7 == 0
+		local forcePool = stats.LuckySevens and (data.TotalRolls + 1) % 7 == 0
 		-- only the first card of a roll may block on a fresh scan; the rest take
 		-- from the buffer so a huge multi-roll never stalls the server
 		local card = CardPool.Draw(stats, forcePool, index == 1)
+		if not card then
+			-- no real account available right now — never fabricate one. Stop here
+			-- and (if we got nothing at all) tell the client we're still scanning.
+			break
+		end
+		data.TotalRolls += 1
+		data.RollsBalance += 1
 		local outcome = addCardToCollection(session, card)
 
 		local tier = Config.TierByName[card.Tier]
@@ -265,6 +270,14 @@ local function performRoll(player, isAuto)
 			Reason = outcome.Reason,
 			TierIndex = tier.Index,
 		})
+	end
+
+	if #results == 0 then
+		-- couldn't fetch any real account this instant; let the player know
+		-- instead of handing them a fake card
+		rollResultRemote:FireClient(player, { Cards = {}, Total = 0, Auto = isAuto, Scanning = true })
+		pushState(player, false)
+		return
 	end
 
 	-- Only send the rarest few cards to the client (it shows ~5 + "more"

@@ -1,15 +1,14 @@
--- The roll engine. Every roll is an INDEPENDENT, uniformly-random account id
--- drawn from the whole 1..MaxUserId space, so it's truly "1 in 8.5 billion" for
--- every player, and duplicates essentially never happen (a collision in 8.5B is
--- astronomically unlikely). To keep rolls instant we keep a background buffer of
--- freshly-scanned random accounts; a roll just consumes one. Nothing is ever
--- served from a cache or a shared pool, which is what used to cause repeats.
+-- The roll engine. Every roll is a fresh, real Roblox account drawn from a
+-- weighted-random id (see Config.IdRanges) and scanned into a card. A background
+-- buffer keeps freshly-scanned accounts ready so rolls are instant.
 --
---   * buffer: fresh random accounts, refilled in the background
+-- IMPORTANT: there are NO fake/"test" cards. If a real account genuinely can't
+-- be fetched at that moment (HTTP off, API down), a roll returns nothing and the
+-- client shows a "scanning…" notice — it will never invent a placeholder card.
+--
+--   * buffer: fresh real accounts, refilled in the background
 --   * legends: the configured famous accounts (resolved at startup) for god rolls
---   * luck: extra fresh draws per roll, keeping the rarest (still all unique)
---   * offline stub mode: unique fake cards so the game is testable in Studio
---     with no internet APIs at all
+--   * luck: a chance to grade a drawn card up a tier
 
 local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
@@ -20,23 +19,18 @@ local Scanner = require(script.Parent:WaitForChild("Scanner"))
 
 local CardPool = {}
 
-local OFFLINE_AFTER_FAILURES = 3
+local DOWN_AFTER_FAILURES = 3 -- consecutive empty refills before we stop hammering
 
 local buffer = {} -- fresh scanned accounts ready to be rolled (each id unique)
 local scanCache = {} -- userId -> true: every id scanned this session (dedup)
 local refilling = false
 local legendCards = {}
 local consecutiveLookupFailures = 0
-local offlineMode = false
 local statsProvider = nil -- set by Init; returns the best FreshInterval online
 
-local OFFLINE_TIER_WEIGHTS = {
-	{ Tier = "Common", Weight = 70 },
-	{ Tier = "Uncommon", Weight = 20 },
-	{ Tier = "Rare", Weight = 8 },
-	{ Tier = "Legendary", Weight = 1.7 },
-	{ Tier = "Mythic", Weight = 0.3 },
-}
+local function lookupsDown()
+	return consecutiveLookupFailures >= DOWN_AFTER_FAILURES
+end
 
 -- ===== random account ids ==================================================
 
@@ -71,10 +65,10 @@ local function scanAndStore(userId, basicInfo)
 end
 
 -- Refill the buffer with fresh real accounts. Scanner.LookupUsers uses the
--- RoProxy bulk endpoint, which returns only the valid ids and never throws on
--- dead ones — so one batch call reliably yields several real accounts. We only
--- drop to stub mode if the lookup itself fails (HTTP off and the engine call
--- also threw), and recover automatically the moment a later call succeeds.
+-- RoProxy bulk endpoint (and an engine per-id fallback), both of which simply
+-- skip ids that don't exist instead of erroring, so one batch reliably yields
+-- several real accounts. We track failures only to stop hammering a dead API;
+-- it recovers automatically the moment a later call succeeds.
 local function refillTick()
 	if refilling or #buffer >= Config.Roll.BufferTarget then
 		return
@@ -90,57 +84,26 @@ local function refillTick()
 	end
 
 	local found = Scanner.LookupUsers(candidates)
-	if found == nil then
-		consecutiveLookupFailures += 1
-		if consecutiveLookupFailures >= OFFLINE_AFTER_FAILURES and not offlineMode then
-			offlineMode = true
-			warn(("[ECI] Account lookups failing — using stub cards. Last error: %s  (HTTP must be ON; in Studio also enable Allow Studio Access to API Services)"):format(tostring(Scanner.LastLookupError)))
-		end
-		refilling = false
-		return
-	end
-
-	consecutiveLookupFailures = 0
-	offlineMode = false
+	local added = 0
 	for userId, basicInfo in found do
 		if #buffer >= Config.Roll.BufferTarget then
 			break
 		end
 		if not scanCache[userId] then
 			table.insert(buffer, scanAndStore(userId, basicInfo))
+			added += 1
+		end
+	end
+
+	if added > 0 then
+		consecutiveLookupFailures = 0
+	else
+		consecutiveLookupFailures += 1
+		if consecutiveLookupFailures == DOWN_AFTER_FAILURES then
+			warn(("[ECI] Account lookups returning nothing — rolls will show 'scanning…' until this clears. Last error: %s  (turn ON Allow HTTP Requests; in Studio also Allow Studio Access to API Services)"):format(tostring(Scanner.LastLookupError)))
 		end
 	end
 	refilling = false
-end
-
--- ===== offline stubs =======================================================
-
-local stubCounter = 0
-
-local function makeStubCard()
-	local totalWeight = 0
-	for _, entry in OFFLINE_TIER_WEIGHTS do
-		totalWeight += entry.Weight
-	end
-	local pick = math.random() * totalWeight
-	local tierName = "Common"
-	for _, entry in OFFLINE_TIER_WEIGHTS do
-		pick -= entry.Weight
-		if pick <= 0 then
-			tierName = entry.Tier
-			break
-		end
-	end
-	stubCounter += 1
-	local tier = Config.TierByName[tierName]
-	return {
-		UserId = -stubCounter, -- negative = fake; never collides with real accounts
-		Name = "TestUser" .. stubCounter,
-		DisplayName = "Test User " .. stubCounter,
-		Tier = tierName,
-		Boost = tier.Boost,
-		Traits = { "Offline stub" },
-	}
 end
 
 -- ===== public API ==========================================================
@@ -162,6 +125,27 @@ function CardPool.Init(getBestFreshInterval)
 		end
 	end)
 
+	-- startup self-test + prime the buffer
+	task.spawn(function()
+		local test = Scanner.LookupUsers({ 1, 156, 261 }) -- Roblox, builderman, Shedletsky
+		local names = {}
+		for _, info in test do
+			table.insert(names, info.Username)
+		end
+		if #names > 0 then
+			print(("[ECI] Account lookups WORKING — real cards incoming (sample: %s)"):format(table.concat(names, ", ")))
+		else
+			warn(("[ECI] Account lookups NOT working — rolls will say 'scanning…'. Last error: %s. Enable Game Settings > Security > Allow HTTP Requests (and in Studio, Allow Studio Access to API Services)."):format(tostring(Scanner.LastLookupError)))
+		end
+		for _ = 1, 4 do
+			if #buffer >= Config.Roll.BufferTarget then
+				break
+			end
+			refillTick()
+		end
+	end)
+
+	-- background refill loop
 	task.spawn(function()
 		while true do
 			local interval = Config.Roll.BaseFreshInterval
@@ -186,48 +170,44 @@ local function popBuffer()
 	return nil
 end
 
--- A guaranteed fresh card. Online, if the buffer is empty, it scans one new
--- random account right now (this yields briefly, but only when fully drained).
--- Offline, it returns a unique stub.
--- A guaranteed real account when the buffer is empty. Tries a few ids so a
--- single dead id doesn't drop us to a stub. Yields (web calls), so it's only
--- used for the FIRST card of a roll, never the bulk extras.
+-- A real account fetched on demand when the buffer is empty. Tries a few ids so
+-- a single dead id doesn't make us give up. Yields (web calls), so it's only
+-- used for the FIRST card of a roll. Returns nil if no real account can be got.
 local function freshFallback()
 	task.spawn(refillTick)
-	if not offlineMode then
-		for _ = 1, 3 do
-			local userId = randomUserId()
-			if not scanCache[userId] then
-				local found = Scanner.LookupUsers({ userId })
-				local basicInfo = found and found[userId]
-				if basicInfo then
-					return scanAndStore(userId, basicInfo)
-				end
+	if lookupsDown() then
+		return nil -- don't hammer a dead API; the background loop will retry
+	end
+	for _ = 1, 3 do
+		local userId = randomUserId()
+		if not scanCache[userId] then
+			local found = Scanner.LookupUsers({ userId })
+			local basicInfo = found and found[userId]
+			if basicInfo then
+				return scanAndStore(userId, basicInfo)
 			end
 		end
 	end
-	return makeStubCard()
+	return nil
 end
 
--- Returns a fresh card. `allowYield` lets it scan on demand when the buffer is
--- empty (first card only); otherwise it just takes from the buffer so the bulk
--- of a multi-roll never blocks the server.
+-- Returns a real account, or nil if none is available right now. `allowYield`
+-- lets it fetch on demand when the buffer is empty (first card of a roll only);
+-- the bulk of a multi-roll just takes from the buffer so it never blocks.
 local function drawOneFresh(allowYield)
 	local card = popBuffer()
 	if card then
 		return card
 	end
-	if not offlineMode then
-		task.spawn(refillTick)
-	end
+	task.spawn(refillTick)
 	if allowYield then
 		return freshFallback()
 	end
 	return nil
 end
 
--- Promote a card to at least `tierName` (used by the Lucky Sevens pity). The
--- account stays the same real account (same id), it's just graded up.
+-- Promote a card to at least `tierName`. The account stays the same real account
+-- (same id), it's just graded up — used by luck and the Lucky Sevens pity.
 local function promoteTier(card, tierName)
 	local tier = Config.TierByName[tierName]
 	if not tier or tierIndex(card) >= tier.Index then
@@ -244,11 +224,10 @@ local function promoteTier(card, tierName)
 	}
 end
 
--- Draw one card for a roll. Never fails. Takes one real account, then LUCK
--- gives it a chance to be graded up a tier (or more) — that's what makes higher
--- rarities reachable without scanning a billion dead ids per pull, and it only
--- consumes one buffered account per card (cheap, so multi-rolls don't drain the
--- buffer). forcePool (Lucky Sevens) guarantees at least a Rare.
+-- Draw one card for a roll. Returns a REAL account, or nil if none can be
+-- fetched right now (the caller then shows a "scanning…" notice — never a fake
+-- card). Luck gives the drawn card a chance to grade up a tier; forcePool
+-- (Lucky Sevens) guarantees at least a Rare.
 function CardPool.Draw(stats, forcePool, isPrimary)
 	-- god roll: a fixed famous account (the only intentional "repeat")
 	if #legendCards > 0 and math.random() < stats.GodChance then
@@ -257,7 +236,7 @@ function CardPool.Draw(stats, forcePool, isPrimary)
 
 	local card = drawOneFresh(isPrimary ~= false)
 	if not card then
-		card = makeStubCard()
+		return nil
 	end
 
 	-- luck = chance to bump the card up a tier (repeatable for big luck)
