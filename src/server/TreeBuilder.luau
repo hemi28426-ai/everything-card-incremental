@@ -123,7 +123,6 @@ local function buildRollTv(folder)
 		Parent = folder,
 	})
 	makePart({ Name = "TvFrame", Size = Vector3.new(1.2, 20, 32), CFrame = CFrame.new(42.6, 11, 0), Color = Color3.fromRGB(74, 64, 100), Parent = screen })
-	makePart({ Name = "TvBase", Size = Vector3.new(5, 9, 12), CFrame = CFrame.new(42.6, 4.5, 0), Color = Color3.fromRGB(55, 48, 75), Parent = screen })
 end
 
 -- ===== rebirth altar (far end of the GOLD platform) ========================
@@ -218,6 +217,7 @@ local function buildBridge(folder, which, from, to, onBuyBridge)
 	local segLen = total.Magnitude / parts
 	local longX = math.abs(dir.X) > math.abs(dir.Z)
 
+	local firstSeg
 	for i = 1, parts do
 		local centre = from + dir * (segLen * (i - 0.5))
 		local seg = makePart({
@@ -230,19 +230,13 @@ local function buildBridge(folder, which, from, to, onBuyBridge)
 		})
 		seg:SetAttribute("Bridge", which)
 		seg:SetAttribute("Index", i)
+		if i == 1 then
+			firstSeg = seg
+		end
 	end
 
-	local padColor = if which == "gold"
-		then Color3.fromRGB(232, 200, 96)
-		elseif which == "green" then Color3.fromRGB(140, 202, 116)
-		else Color3.fromRGB(150, 182, 232)
-	local anchor = makePart({
-		Name = "BridgeStart_" .. which,
-		Size = Vector3.new(9, 0.5, 9),
-		CFrame = CFrame.new(from.X, 0.3, from.Z),
-		Color = padColor,
-		Parent = folder,
-	})
+	-- the build prompt sits on the bridge's first tile (no separate block); the
+	-- client keeps that first tile always visible so you can stand on it to build
 	local prompt = Instance.new("ProximityPrompt")
 	prompt.Name = "BridgePrompt"
 	prompt.ActionText = "Build"
@@ -250,7 +244,7 @@ local function buildBridge(folder, which, from, to, onBuyBridge)
 	prompt.HoldDuration = 0
 	prompt.MaxActivationDistance = 12
 	prompt.RequiresLineOfSight = false
-	prompt.Parent = anchor
+	prompt.Parent = firstSeg
 	prompt.Triggered:Connect(function(player)
 		onBuyBridge(player, which)
 	end)

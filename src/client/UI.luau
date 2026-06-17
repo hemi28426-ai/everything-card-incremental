@@ -1395,11 +1395,20 @@ function UI:UpdateBridges()
 	end
 	local bridges = (self.State and self.State.Bridges) or {}
 	for which, segs in self.BridgeSegs do
+		local conf = Config.Bridges[which]
 		local built = bridges[which] or 0
 		for index, part in segs do
-			local on = index <= built
+			-- the first tile is always there (it holds the Build prompt); the rest
+			-- appear solid as you build them, ghosted otherwise
+			local on = index <= built or index == 1
 			part.CanCollide = on
-			part.LocalTransparencyModifier = if on then 0 else 0.6
+			part.LocalTransparencyModifier = if (index <= built or index == 1) then 0 else 0.6
+			if index == 1 then
+				local prompt = part:FindFirstChildWhichIsA("ProximityPrompt")
+				if prompt then
+					prompt.Enabled = not conf or built < conf.Parts
+				end
+			end
 		end
 	end
 end

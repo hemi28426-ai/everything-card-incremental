@@ -53,13 +53,13 @@ local function createBoard()
 	local board = Instance.new("Part")
 	board.Name = "GlobalLeaderboard"
 	board.Anchored = true
-	board.Size = Vector3.new(16, 9, 1)
-	board.Position = Vector3.new(34, 7.5, -20)
+	board.Size = Vector3.new(1.2, 13, 17) -- thin on X so it faces west like the TV
+	board.Position = Vector3.new(38, 9, 23) -- right next to the Card Opener, on the hub
 	board.Color = Color3.fromRGB(25, 18, 40)
 	board.Material = Enum.Material.SmoothPlastic
 
 	local gui = Instance.new("SurfaceGui")
-	gui.Face = Enum.NormalId.Back -- this side faces the spawn point
+	gui.Face = Enum.NormalId.Left -- −X, faces the hub centre (same way as the TV)
 	gui.SizingMode = Enum.SurfaceGuiSizingMode.PixelsPerStud
 	gui.PixelsPerStud = 40
 	gui.Parent = board
