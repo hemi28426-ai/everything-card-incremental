@@ -110,46 +110,20 @@ local function buildPath(fromNode, toNode, folder)
 end
 
 -- ===== the Card TV =========================================================
--- Faces SOUTH (−Z), toward the spawn, so you always walk up to its screen.
+-- On the EAST side of the hub (the side with no bridge). Its WEST face (−X)
+-- holds the screen, facing the hub centre where you walk up. The clickable
+-- buttons live on a SurfaceGui the client parents to this part.
 
-local function buildRollTv(folder, onRoll)
+local function buildRollTv(folder)
 	local screen = makePart({
 		Name = "RollTV",
-		Size = Vector3.new(30, 17, 1),
-		CFrame = CFrame.new(0, 10, -20),
+		Size = Vector3.new(1.5, 18, 30),
+		CFrame = CFrame.new(42, 11, 0),
 		Color = Color3.fromRGB(28, 24, 40),
 		Parent = folder,
 	})
-	-- frame + a little stand so it reads as a machine, matte (no neon)
-	makePart({ Name = "TvFrame", Size = Vector3.new(32.5, 19.5, 1.4), CFrame = CFrame.new(0, 10, -20.4), Color = Color3.fromRGB(70, 60, 95), Parent = screen })
-	makePart({ Name = "TvBase", Size = Vector3.new(14, 4, 5), CFrame = CFrame.new(0, 1.5, -20.4), Color = Color3.fromRGB(55, 48, 75), Parent = screen })
-	-- header sign
-	local header = makePart({ Name = "TvHeader", Size = Vector3.new(24, 3, 1.6), CFrame = CFrame.new(0, 20.5, -20.2), Color = Color3.fromRGB(120, 90, 200), Parent = screen })
-	local hgui = Instance.new("SurfaceGui")
-	hgui.Face = Enum.NormalId.Front
-	hgui.Parent = header
-	local hlabel = Instance.new("TextLabel")
-	hlabel.BackgroundTransparency = 1
-	hlabel.Size = UDim2.new(1, 0, 1, 0)
-	hlabel.Font = Enum.Font.GothamBlack
-	hlabel.TextScaled = true
-	hlabel.TextColor3 = Color3.fromRGB(255, 255, 255)
-	hlabel.Text = "CARD OPENER"
-	hlabel.Parent = hgui
-
-	-- a guaranteed way to roll even if the on-screen button is missed
-	local prompt = Instance.new("ProximityPrompt")
-	prompt.Name = "RollPrompt"
-	prompt.ActionText = "Roll"
-	prompt.ObjectText = "🃏 Card Opener"
-	prompt.KeyboardKeyCode = Enum.KeyCode.E
-	prompt.HoldDuration = 0
-	prompt.MaxActivationDistance = 14
-	prompt.RequiresLineOfSight = false
-	prompt.Parent = screen
-	prompt.Triggered:Connect(function(player)
-		onRoll(player)
-	end)
+	makePart({ Name = "TvFrame", Size = Vector3.new(1.2, 20, 32), CFrame = CFrame.new(42.6, 11, 0), Color = Color3.fromRGB(74, 64, 100), Parent = screen })
+	makePart({ Name = "TvBase", Size = Vector3.new(5, 9, 12), CFrame = CFrame.new(42.6, 4.5, 0), Color = Color3.fromRGB(55, 48, 75), Parent = screen })
 end
 
 -- ===== rebirth altar (far end of the GOLD platform) ========================
@@ -258,11 +232,15 @@ local function buildBridge(folder, which, from, to, onBuyBridge)
 		seg:SetAttribute("Index", i)
 	end
 
+	local padColor = if which == "gold"
+		then Color3.fromRGB(232, 200, 96)
+		elseif which == "green" then Color3.fromRGB(140, 202, 116)
+		else Color3.fromRGB(150, 182, 232)
 	local anchor = makePart({
-		Name = "BridgeAnchor_" .. which,
-		Size = Vector3.new(8, 4, 8),
-		CFrame = CFrame.new(from.X, 2, from.Z),
-		Color = Color3.fromRGB(95, 95, 102),
+		Name = "BridgeStart_" .. which,
+		Size = Vector3.new(9, 0.5, 9),
+		CFrame = CFrame.new(from.X, 0.3, from.Z),
+		Color = padColor,
 		Parent = folder,
 	})
 	local prompt = Instance.new("ProximityPrompt")
@@ -280,7 +258,7 @@ end
 
 -- ===== build everything ====================================================
 
-function TreeBuilder.Build(onBuy, onBuyBridge, onBuyShop, onRoll)
+function TreeBuilder.Build(onBuy, onBuyBridge, onBuyShop)
 	for _, legacyName in { "Baseplate", "SpawnPlaza", "MainIsland", "GoldenIsland", "GreenIsland", "RebirthBridge", "UpgradeTree" } do
 		local legacy = workspace:FindFirstChild(legacyName)
 		if legacy then
@@ -314,7 +292,7 @@ function TreeBuilder.Build(onBuy, onBuyBridge, onBuyShop, onRoll)
 		end
 	end
 
-	buildRollTv(folder, onRoll)
+	buildRollTv(folder)
 	buildAltar(folder)
 	buildShop(folder, onBuyShop)
 

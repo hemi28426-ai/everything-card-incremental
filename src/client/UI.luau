@@ -180,14 +180,15 @@ function UI:BuildRollTV()
 		return
 	end
 
+	-- Parent the SurfaceGui to the TV PART itself (not PlayerGui). A SurfaceGui
+	-- that is a child of a workspace part renders on its face and is NOT affected
+	-- by ResetOnSpawn — the most reliable setup. Client-created => per-player.
 	local gui = create("SurfaceGui", {
 		Name = "RollTVGui",
-		Adornee = screen,
-		Face = Enum.NormalId.Front, -- −Z face, toward the spawn you walk up from
+		Face = Enum.NormalId.Left, -- −X face, toward the hub centre / the player
 		SizingMode = Enum.SurfaceGuiSizingMode.PixelsPerStud,
 		PixelsPerStud = 50,
-		ResetOnSpawn = false, -- CRITICAL: else it's deleted the moment you spawn
-		Parent = playerGui,
+		Parent = screen,
 	})
 	create("Frame", {
 		Size = UDim2.new(1, 0, 1, 0),
@@ -1090,15 +1091,14 @@ function UI:BuildPadSurfaces()
 		end
 
 		local gui = create("SurfaceGui", {
-			Adornee = pad,
 			Face = Enum.NormalId.Top,
 			SizingMode = Enum.SurfaceGuiSizingMode.PixelsPerStud,
 			PixelsPerStud = 25,
-			ResetOnSpawn = false, -- survive respawns
+			-- child of the pad part: renders on top, survives respawns
 			-- only render the billboard when you're near it; with ~75 pads this
 			-- is the single biggest perf win as the tree fills out
 			MaxDistance = 65,
-			Parent = playerGui,
+			Parent = pad,
 		})
 		local bg = create("Frame", {
 			BackgroundTransparency = 1,
@@ -1198,12 +1198,10 @@ function UI:BuildPadSurfaces()
 	local altar = tree:WaitForChild("RebirthAltar", 10)
 	if altar then
 		local gui = create("SurfaceGui", {
-			Adornee = altar,
 			Face = Enum.NormalId.Top,
 			SizingMode = Enum.SurfaceGuiSizingMode.PixelsPerStud,
 			PixelsPerStud = 22,
-			ResetOnSpawn = false, -- survive respawns
-			Parent = playerGui,
+			Parent = altar, -- child of the altar part; survives respawns
 		})
 		local bg = create("Frame", {
 			BackgroundTransparency = 1,
