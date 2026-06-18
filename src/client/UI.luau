@@ -316,7 +316,7 @@ function UI:BuildRollTV()
 	self.TVFastButton = fastBtn
 	fastBtn.Activated:Connect(function()
 		if self.State and not self.State.AutomationUnlocked then
-			self.Callbacks.OnBuyAutomation()
+			self:ShowTicker("🔒 Unlock AUTO by buying the Automaton Core on the green island.")
 		else
 			self.Callbacks.OnPromptFastAuto()
 		end
@@ -417,10 +417,18 @@ function UI:UpdateTV()
 	if not state or not self.TVSpeedButton then
 		return
 	end
-	local cost = state.RollSpeedCost or 0
-	self.TVSpeedButton.Text = ("Roll Speed  Lv %d\n🪙 %s"):format(state.RollSpeedLevel or 0, Format(cost))
-	self.TVSpeedButton.BackgroundColor3 = if state.Coins >= cost then Color3.fromRGB(150, 120, 220) else COLORS.Disabled
+	local level = state.RollSpeedLevel or 0
+	local maxLevel = (state.Stats and state.Stats.MaxRollSpeedLevel) or Config.RollSpeed.MaxLevel
+	if level >= maxLevel then
+		self.TVSpeedButton.Text = ("Roll Speed  Lv %d\nMAX"):format(level)
+		self.TVSpeedButton.BackgroundColor3 = COLORS.Disabled
+	else
+		local cost = state.RollSpeedCost or 0
+		self.TVSpeedButton.Text = ("Roll Speed  Lv %d/%d\n🪙 %s"):format(level, maxLevel, Format(cost))
+		self.TVSpeedButton.BackgroundColor3 = if state.Coins >= cost then Color3.fromRGB(150, 120, 220) else COLORS.Disabled
+	end
 
+	-- AUTO unlocks by buying the Automaton Core on the green island
 	local unlocked = state.AutomationUnlocked == true
 	local on = state.AutoOn == true
 	if not unlocked then
@@ -432,16 +440,68 @@ function UI:UpdateTV()
 	end
 
 	if not unlocked then
-		self.TVFastButton.Text = ("Buy Auto\n⭐ %d"):format(Config.AutomationTokenCost)
-		self.TVFastButton.BackgroundColor3 = if (state.RebirthTokens or 0) >= Config.AutomationTokenCost
-			then Color3.fromRGB(255, 200, 80)
-			else COLORS.Disabled
+		self.TVFastButton.Text = "AUTO on\nGreen Island"
+		self.TVFastButton.BackgroundColor3 = COLORS.Disabled
 	elseif state.HasFastAuto then
 		self.TVFastButton.Text = "⚡ FAST ✓"
 		self.TVFastButton.BackgroundColor3 = COLORS.Green
 	else
 		self.TVFastButton.Text = "⚡ FAST AUTO"
 		self.TVFastButton.BackgroundColor3 = Color3.fromRGB(255, 180, 60)
+	end
+
+	self:UpdateShop()
+end
+
+-- Keep each shop item's floating price tag current for this player.
+function UI:UpdateShop()
+	local state = self.State
+	if not state then
+		return
+	end
+	if not self.ShopTags then
+		local shop = workspace:FindFirstChild("ImportedShop")
+		if not shop then
+			return
+		end
+		local tags = {}
+		for _, part in shop:GetDescendants() do
+			local id = part:GetAttribute("ShopItem")
+			if id then
+				local tag = part:FindFirstChild("ShopTag")
+				local price = tag and tag:FindFirstChild("Price")
+				if price then
+					table.insert(tags, { Id = id, Price = price, Prompt = part:FindFirstChildWhichIsA("ProximityPrompt") })
+				end
+			end
+		end
+		if #tags == 0 then
+			return -- prompts not attached yet; try again next refresh
+		end
+		self.ShopTags = tags
+	end
+
+	for _, t in self.ShopTags do
+		local item = Config.ShopById[t.Id]
+		if not item then
+			continue
+		end
+		local level = (state.ShopUpgrades and state.ShopUpgrades[t.Id]) or 0
+		if item.MaxLevel and level >= item.MaxLevel then
+			t.Price.Text = "✓ OWNED"
+			t.Price.TextColor3 = Color3.fromRGB(150, 235, 150)
+			if t.Prompt then
+				t.Prompt.Enabled = false
+			end
+		else
+			local cost = Config.GetShopCost(item, level)
+			local suffix = if item.MaxLevel and item.MaxLevel > 1 then (" • Lv %d/%d"):format(level, item.MaxLevel) else ""
+			t.Price.Text = ("🪙 %s%s"):format(Format(cost), suffix)
+			t.Price.TextColor3 = if state.Coins >= cost then Color3.fromRGB(150, 235, 150) else Color3.fromRGB(235, 160, 160)
+			if t.Prompt then
+				t.Prompt.Enabled = true
+			end
+		end
 	end
 end
 
@@ -1349,7 +1409,7 @@ function UI:RefreshRebirthModal()
 		("You will gain:  ⭐ %d token%s"):format(total, total == 1 and "" or "s"),
 		"",
 		("KEPT:  %s+ cards, golden tree, backpack, rolls"):format(r.KeepTier),
-		("WIPED:  coins, purple upgrades, all cards below %s"):format(r.KeepTier),
+		("WIPED:  coins, the hub coin trees, all cards below %s"):format(r.KeepTier),
 		"",
 		r.HasLegendary and "✓ Legendary+ card owned" or "✗ You need a Legendary+ card",
 		r.TokensIfNow >= 1 and ("✓ %s coins banked"):format(Format(state.Coins))
@@ -1381,9 +1441,14 @@ local function setPadVisible(entry, visible)
 	entry.Gui.Enabled = visible
 end
 
-local function bridgeDone(state, which)
-	local conf = which and Config.Bridges[which]
-	return not which or (conf and (((state.Bridges and state.Bridges[which]) or 0) >= conf.Parts))
+-- The hub (coin trees) is always reachable; the gold/green islands need their
+-- bridge finished. Used both to reveal scenery and to show/hide pads.
+local function areaReachable(state, area)
+	if not area or area == "hub" then
+		return true
+	end
+	local conf = Config.Bridges[area]
+	return conf ~= nil and (((state.Bridges and state.Bridges[area]) or 0) >= conf.Parts)
 end
 
 -- Per-player bridge reveal: built parts are solid + walkable; the unbuilt rest
@@ -1419,7 +1484,7 @@ function UI:UpdateAreas()
 		return
 	end
 	for area, parts in self.AreaParts do
-		local shown = bridgeDone(self.State, area)
+		local shown = areaReachable(self.State, area)
 		for _, part in parts do
 			part.LocalTransparencyModifier = if shown then 0 else 1
 			part.CanCollide = shown
@@ -1438,16 +1503,18 @@ function UI:UpdatePads()
 		local treeNode = Config.NodeById[nodeId]
 		local levels = if treeNode.IsRebirth then state.RebirthUpgrades else state.Upgrades
 		local level = levels[nodeId] or 0
-		-- show once you've bridged to its area, its prerequisite is owned, and
-		-- (for automation pads) you've bought Automation
-		local unlocked = bridgeDone(state, treeNode.Area)
-			and (not treeNode.Requires or (levels[treeNode.Requires] or 0) >= 1)
-			and (not treeNode.IsAutomation or automationUnlocked)
 
-		setPadVisible(entry, unlocked)
-		if not unlocked then
+		-- the WHOLE tree is visible once you can reach its area; what changes is
+		-- whether you can buy yet (prerequisite owned, automation unlocked)
+		local visible = areaReachable(state, treeNode.Area)
+		setPadVisible(entry, visible)
+		if not visible then
 			continue
 		end
+
+		local prereqOwned = not treeNode.Requires or (levels[treeNode.Requires] or 0) >= 1
+		local autoOk = not treeNode.IsAutomation or automationUnlocked
+		local maxed = treeNode.MaxLevel and level >= treeNode.MaxLevel
 
 		-- pads you own glow warm white (local-only color change). Cache so we
 		-- only write the property when the owned state actually flips.
@@ -1459,17 +1526,23 @@ function UI:UpdatePads()
 				else (Config.BranchColors[treeNode.Branch] or Color3.fromRGB(200, 200, 200))
 		end
 
-		-- compute the cost label + affordability, then only write if changed
-		local text, affordable
-		if treeNode.MaxLevel and level >= treeNode.MaxLevel then
-			text, affordable = "✓ OWNED", true
+		-- compute the cost/lock label + affordability, then only write if changed
+		local text, affordable, promptOn
+		if maxed then
+			text, affordable, promptOn = "✓ OWNED", true, false
+		elseif not (prereqOwned and autoOk) then
+			local reqNode = treeNode.Requires and Config.NodeById[treeNode.Requires]
+			text = if not autoOk
+				then "🔒 Buy Automaton Core"
+				else ("🔒 " .. (reqNode and reqNode.Name or "locked"))
+			affordable, promptOn = false, false
 		else
 			local cost = Config.GetNodeCost(treeNode, level)
 			local prefix = if treeNode.MaxLevel == nil then ("Lv %d\n"):format(level) else ""
 			local icon = if treeNode.IsRebirth then "⭐" else "🪙"
 			local wallet = if treeNode.IsRebirth then state.RebirthTokens else state.Coins
 			text = prefix .. icon .. " " .. Format(cost)
-			affordable = wallet >= cost
+			affordable, promptOn = wallet >= cost, true
 		end
 		if entry.LastText ~= text then
 			entry.LastText = text
@@ -1481,12 +1554,9 @@ function UI:UpdatePads()
 				then Color3.fromRGB(10, 60, 25)
 				else Color3.fromRGB(120, 20, 30)
 		end
-		if entry.Prompt then
-			local promptOn = not (treeNode.MaxLevel and level >= treeNode.MaxLevel)
-			if entry.LastPrompt ~= promptOn then
-				entry.LastPrompt = promptOn
-				entry.Prompt.Enabled = promptOn
-			end
+		if entry.Prompt and entry.LastPrompt ~= promptOn then
+			entry.LastPrompt = promptOn
+			entry.Prompt.Enabled = promptOn
 		end
 	end
 
@@ -1548,7 +1618,7 @@ function UI:Update(state)
 		self:ShowTicker("👇 Press ROLL to pull your first card!")
 	end
 	if previous and state.Rebirths > previous.Rebirths then
-		self:ShowTicker("🌟 The Golden Island awaits! Step on the portal beside the altar →")
+		self:ShowTicker("🌟 Rebirthed! Spend tokens on the gold (rebirth) & green (automation) islands.")
 	end
 
 	if previous then

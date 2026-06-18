@@ -253,7 +253,48 @@ function CardPool.Draw(stats, forcePool, isPrimary)
 	if forcePool then
 		card = promoteTier(card, "Rare")
 	end
+
+	-- rarity floor (the Legendary Flask): every roll graded up to at least this
+	-- tier, so Common→Epic are skipped entirely
+	if stats.RarityFloor then
+		card = promoteTier(card, stats.RarityFloor)
+	end
 	return card
+end
+
+-- Grant a guaranteed card in [minTierName, maxTierName] (weighted toward the
+-- low end), with a value multiplier on its boost — used by the shop's Lucky
+-- Block. Returns a REAL account graded up, or nil if none can be fetched now.
+function CardPool.DrawGuaranteed(minTierName, maxTierName, valueMult)
+	local minTier = Config.TierByName[minTierName]
+	local maxTier = Config.TierByName[maxTierName]
+	if not minTier then
+		return nil
+	end
+	local maxIndex = maxTier and maxTier.Index or minTier.Index
+
+	local card = drawOneFresh(true)
+	if not card then
+		return nil
+	end
+
+	-- weighted toward the floor: each step up is half as likely as the last
+	local index = minTier.Index
+	while index < maxIndex and math.random() < 0.4 do
+		index += 1
+	end
+	card = promoteTier(card, Config.Tiers[index].Name)
+	-- promoteTier returns the same table when already at/above tier; clone before
+	-- scaling the boost so we never mutate a shared legend/buffer card
+	return {
+		UserId = card.UserId,
+		Name = card.Name,
+		DisplayName = card.DisplayName,
+		Tier = card.Tier,
+		Boost = math.floor(card.Boost * (valueMult or 1)),
+		Traits = card.Traits,
+		Flavor = card.Flavor,
+	}
 end
 
 return CardPool

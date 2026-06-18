@@ -6,6 +6,9 @@
     "ReplicatedStorage": {
       "Shared": {
         "$path": "src/shared"
+      },
+      "DialogModule": {
+        "$path": "assets/DialogModule.rbxmx"
       }
     },
 
@@ -23,7 +26,16 @@
       }
     },
 
+    "StarterGui": {
+      "dialog": {
+        "$path": "assets/DialogGui.rbxmx"
+      }
+    },
+
     "Workspace": {
+      "ImportedShop": {
+        "$path": "assets/Shop.rbxmx"
+      },
       "SpawnLocation": {
         "$className": "SpawnLocation",
         "$properties": {

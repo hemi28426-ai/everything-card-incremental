@@ -4,6 +4,7 @@
 
 local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local ServerStorage = game:GetService("ServerStorage")
 local MarketplaceService = game:GetService("MarketplaceService")
 
 local Shared = ReplicatedStorage:WaitForChild("Shared")
@@ -38,7 +39,6 @@ local setAutoSellRemote = makeRemote("SetAutoSell")
 local toggleAutoRemote = makeRemote("ToggleAuto")
 local backpackRemote = makeRemote("UpgradeBackpack")
 local buyRollSpeedRemote = makeRemote("BuyRollSpeed")
-local buyAutomationRemote = makeRemote("BuyAutomation")
 local rebirthRemote = makeRemote("Rebirth")
 local setAutoRebirthRemote = makeRemote("SetAutoRebirth")
 local collectionViewRemote = makeRemote("CollectionView")
@@ -53,6 +53,7 @@ remotes.Parent = ReplicatedStorage
 
 local sessions = {}
 local tvTicker = nil
+local applyCharacterEffects -- forward-declared; defined with the shop handlers below
 
 local function computeRate(data, stats)
 	local boostSum = 0
@@ -170,10 +171,10 @@ end
 -- Adds a rolled card to the collection. Auto-sell settings convert the pull
 -- straight to coins; dupes stack for free; a NEW unique card when the
 -- backpack is full gets auto-sold too.
-local function addCardToCollection(session, card)
+local function addCardToCollection(session, card, forceKeep)
 	local data, stats = session.Data, session.Stats
 	local tier = Config.TierByName[card.Tier]
-	if data.AutoSell[card.Tier] then
+	if data.AutoSell[card.Tier] and not forceKeep then
 		local soldFor = math.floor(tier.SellValue * stats.DupeMult)
 		data.Coins += soldFor
 		data.TotalEarned += soldFor
@@ -225,7 +226,9 @@ local function performRoll(player, isAuto)
 		-- normal auto-roll fires every 3s. With the FAST AUTO gamepass it instead
 		-- fires at YOUR manual roll speed (so roll-speed upgrades also speed up
 		-- your auto). No separate auto-speed upgrades exist.
-		local interval = if session.HasFastAuto then stats.RollCooldown else Config.Roll.AutoInterval
+		local interval = if session.HasFastAuto
+			then stats.RollCooldown
+			else Config.Roll.AutoInterval * stats.AutoSpeedMult
 		session.NextAutoAt = now + interval
 	else
 		if now < session.NextRollAt then
@@ -328,7 +331,7 @@ local function onPlayerAdded(player)
 
 	leaderstats.Parent = player
 
-	local stats = Config.ComputeStats(data.RebirthUpgrades, data.RollSpeedLevel, data.ShopUpgrades)
+	local stats = Config.ComputeStats(data)
 	local session = {
 		Data = data,
 		CanSave = loadedSafely,
@@ -341,6 +344,17 @@ local function onPlayerAdded(player)
 		RollsValue = rollsValue,
 	}
 	sessions[player] = session
+
+	-- shop speed effects (walk speed flask, speed coil) on every spawn
+	player.CharacterAdded:Connect(function()
+		task.wait(0.2) -- let the Humanoid exist
+		if sessions[player] then
+			applyCharacterEffects(player, session)
+		end
+	end)
+	if player.Character then
+		applyCharacterEffects(player, session)
+	end
 
 	-- does this player own the FAST AUTO gamepass?
 	task.spawn(function()
@@ -448,12 +462,12 @@ local function onBuyUpgrade(player, nodeId)
 
 	levels[nodeId] = level + 1
 
-	-- Handle special upgrade effects
-	if nodeId == "automation" then
+	-- Buying the Automaton Core (root of the green tree) unlocks auto-roll.
+	if nodeId == "autocore" then
 		data.AutomationUnlocked = true
 	end
 
-	session.Stats = Config.ComputeStats(data.RebirthUpgrades, data.RollSpeedLevel, data.ShopUpgrades)
+	session.Stats = Config.ComputeStats(data)
 	pushState(player, false)
 end
 
@@ -694,7 +708,7 @@ local function doRebirth(player, session)
 	data.Rebirths += 1
 	data.RebirthTokens += tokens
 	data.Upgrades = {}
-	session.Stats = Config.ComputeStats(data.RebirthUpgrades, data.RollSpeedLevel, data.ShopUpgrades)
+	session.Stats = Config.ComputeStats(data)
 	data.Coins = session.Stats.StartCoins
 
 	announce(("🌟 %s rebirthed and earned %d token%s!"):format(player.Name, tokens, tokens == 1 and "" or "s"))
@@ -740,13 +754,17 @@ buyRollSpeedRemote.OnServerEvent:Connect(function(player)
 		return
 	end
 	local data = session.Data
+	-- the level cap (20) is raised by RAM sticks and rebirth speed nodes
+	if data.RollSpeedLevel >= session.Stats.MaxRollSpeedLevel then
+		return
+	end
 	local cost = Config.GetRollSpeedCost(data.RollSpeedLevel)
 	if data.Coins < cost then
 		return
 	end
 	data.Coins -= cost
 	data.RollSpeedLevel += 1
-	session.Stats = Config.ComputeStats(data.RebirthUpgrades, data.RollSpeedLevel, data.ShopUpgrades)
+	session.Stats = Config.ComputeStats(data)
 	pushState(player, false)
 end)
 
@@ -787,7 +805,42 @@ local function onBuyBridge(player, which)
 	end
 end
 
--- Buy a permanent shop upgrade (paid in coins, via a shop machine prompt).
+-- Give the player the Speed Coil tool (cloned from the template TreeBuilder
+-- stashes in ServerStorage). Goes to both the Backpack and StarterGear so it
+-- survives respawns.
+local function grantSpeedCoil(player)
+	local template = ServerStorage:FindFirstChild("SpeedCoilTemplate")
+	if not template then
+		return
+	end
+	local function ensureIn(container)
+		if container and not container:FindFirstChild(template.Name) then
+			template:Clone().Parent = container
+		end
+	end
+	ensureIn(player:FindFirstChildOfClass("StarterGear"))
+	ensureIn(player:FindFirstChildOfClass("Backpack"))
+end
+
+-- Apply per-character effects from the shop: the speed flask scales walk speed,
+-- and the speed coil is (re)granted. Safe to call whenever stats change or a
+-- character spawns.
+function applyCharacterEffects(player, session)
+	local stats = session.Stats
+	local character = player.Character
+	if character then
+		local humanoid = character:FindFirstChildOfClass("Humanoid")
+		if humanoid then
+			humanoid.WalkSpeed = Config.Economy.BaseWalkSpeed * stats.WalkSpeedMult
+		end
+	end
+	if stats.HasSpeedCoil then
+		grantSpeedCoil(player)
+	end
+end
+
+-- Buy a shop item (paid in coins, via a proximity prompt on the physical item).
+-- Most items are stat unlocks; the Lucky Block instead grants a card on the spot.
 local function onBuyShop(player, itemId)
 	local session = sessions[player]
 	local item = type(itemId) == "string" and Config.ShopById[itemId]
@@ -796,34 +849,47 @@ local function onBuyShop(player, itemId)
 	end
 	local data = session.Data
 	local level = data.ShopUpgrades[itemId] or 0
+	if item.MaxLevel and level >= item.MaxLevel then
+		return
+	end
 	local cost = Config.GetShopCost(item, level)
 	if data.Coins < cost then
 		return
 	end
+
+	if itemId == "luckyblock" then
+		-- a guaranteed Mythic+ card with bonus value, straight into the collection
+		local lb = Config.LuckyBlock
+		local card = CardPool.DrawGuaranteed(lb.MinTier, lb.MaxTier, lb.ValueMult)
+		if not card then
+			tickerRemote:FireClient(player, "🎁 Lucky Block fizzled — still scanning accounts, try again!")
+			return
+		end
+		data.Coins -= cost
+		data.ShopUpgrades[itemId] = level + 1
+		local outcome = addCardToCollection(session, card, true) -- keep it, never auto-sell
+		local tier = Config.TierByName[card.Tier]
+		if tier and tier.Index > data.BestTier then
+			data.BestTier = tier.Index
+		end
+		announce(("🎁 %s opened a Lucky Block: %s %s!"):format(player.Name, card.Tier:upper(), card.DisplayName))
+		rollResultRemote:FireClient(player, { Cards = { {
+			UserId = card.UserId, Name = card.Name, DisplayName = card.DisplayName,
+			Tier = card.Tier, Boost = card.Boost, Traits = card.Traits, Flavor = card.Flavor,
+			IsNew = outcome.IsNew, Count = outcome.Count, AutoSold = outcome.AutoSold,
+			SoldFor = outcome.SoldFor, Reason = outcome.Reason, TierIndex = tier and tier.Index or 0,
+		} }, Total = 1, Auto = false })
+		session.CardsDirty = true
+		pushState(player, false)
+		return
+	end
+
 	data.Coins -= cost
 	data.ShopUpgrades[itemId] = level + 1
-	session.Stats = Config.ComputeStats(data.RebirthUpgrades, data.RollSpeedLevel, data.ShopUpgrades)
+	session.Stats = Config.ComputeStats(data)
+	applyCharacterEffects(player, session)
 	pushState(player, false)
 end
-
--- Buy Automation at the Card Opener (paid in Rebirth Tokens). Unlocks auto-roll
--- and the green automation tree.
-buyAutomationRemote.OnServerEvent:Connect(function(player)
-	local session = sessions[player]
-	if not session then
-		return
-	end
-	local data = session.Data
-	if data.AutomationUnlocked then
-		return
-	end
-	if data.RebirthTokens < Config.AutomationTokenCost then
-		return
-	end
-	data.RebirthTokens -= Config.AutomationTokenCost
-	data.AutomationUnlocked = true
-	pushState(player, false)
-end)
 
 -- ===== automation island (auto-equip / auto-sell / auto-rebirth) ==========
 
@@ -840,7 +906,7 @@ local function runAutomation(player, session)
 		local threshold = math.max(1, data.AutoRebirthTokens or 10)
 		if Config.GetRebirthTokens(data.Coins) >= threshold and hasLegendaryPlus(data) then
 			if doRebirth(player, session) > 0 then
-				session.Stats = Config.ComputeStats(data.RebirthUpgrades, data.RollSpeedLevel, data.ShopUpgrades)
+				session.Stats = Config.ComputeStats(data)
 				return true
 			end
 		end
@@ -848,6 +914,28 @@ local function runAutomation(player, session)
 
 	if stats.AutoSellUnlocked and sellAllDupes(session) > 0 then
 		changed = true
+	end
+	-- Smart Seller: actively liquidate any OWNED cards whose tier you've toggled
+	-- to auto-sell (not just dupes), unequipping them first.
+	if stats.SmartSellUnlocked then
+		local earned = 0
+		for key, card in data.Cards do
+			if data.AutoSell[card.Tier] then
+				local tier = Config.TierByName[card.Tier]
+				earned += math.floor(tier.SellValue * card.Count * stats.DupeMult)
+				data.Cards[key] = nil
+				local eqi = table.find(data.Equipped, key)
+				if eqi then
+					table.remove(data.Equipped, eqi)
+				end
+			end
+		end
+		if earned > 0 then
+			session.UniqueCount = countUnique(data.Cards)
+			data.Coins += earned
+			data.TotalEarned += earned
+			changed = true
+		end
 	end
 	if stats.AutoEquipUnlocked and equipBest(session) then
 		changed = true

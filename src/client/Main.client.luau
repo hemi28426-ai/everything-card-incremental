@@ -23,7 +23,6 @@ local setAutoSellRemote = remotes:WaitForChild("SetAutoSell")
 local toggleAutoRemote = remotes:WaitForChild("ToggleAuto")
 local backpackRemote = remotes:WaitForChild("UpgradeBackpack")
 local buyRollSpeedRemote = remotes:WaitForChild("BuyRollSpeed")
-local buyAutomationRemote = remotes:WaitForChild("BuyAutomation")
 local rebirthRemote = remotes:WaitForChild("Rebirth")
 local setAutoRebirthRemote = remotes:WaitForChild("SetAutoRebirth")
 local collectionViewRemote = remotes:WaitForChild("CollectionView")
@@ -76,9 +75,6 @@ ui = UI.new({
 	end,
 	OnBuyRollSpeed = function()
 		buyRollSpeedRemote:FireServer()
-	end,
-	OnBuyAutomation = function()
-		buyAutomationRemote:FireServer()
 	end,
 	OnPromptFastAuto = function()
 		pcall(function()

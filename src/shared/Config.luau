@@ -1,5 +1,16 @@
 -- Everything Card Incremental — all game tuning in one file.
--- Tiers, the legends list, the upgrade tree, roll pacing: edit freely.
+-- Tiers, the legends list, the upgrade trees, roll pacing: edit freely.
+--
+-- Layout of the world (all built at runtime by TreeBuilder):
+--   * HUB (centre, round): the COIN trees. One short trunk that SPLITS into the
+--     Path of Greed (money) and the Path of Luck (rare odds). Bought with COINS;
+--     these reset on rebirth, so you re-climb them each run (faster every time as
+--     your permanent rebirth tree grows).
+--   * GOLD / yellow island (north): the REBIRTH tree. Bought with TOKENS. One
+--     root that splits into five organic branches and boosts EVERYTHING. Permanent.
+--   * GREEN island (south): the AUTOMATION tree. Bought with TOKENS. Permanent.
+--   * SHOP (west): the imported store — a cashier you can talk to and five items
+--     (RAM sticks, two flasks, a speed coil, a lucky block). Bought with COINS.
 
 local Config = {}
 
@@ -50,11 +61,14 @@ Config.Roll = {
 }
 
 -- Manual roll-speed upgrade (bought with coins right on the TV). Each level
--- shaves the manual cooldown; cost compounds.
+-- shaves the manual cooldown; cost compounds. The level CAP starts at 20 and is
+-- raised by the shop's RAM sticks (+1 each, up to +20 → 40) and a couple of
+-- rebirth speed upgrades.
 Config.RollSpeed = {
 	BaseCost = 50,
 	CostMult = 1.6,
 	CooldownFactor = 0.9, -- cooldown *= 0.9 per level
+	MaxLevel = 20, -- base cap; RAM sticks + rebirth speed nodes raise it
 }
 
 function Config.GetRollSpeedCost(level)
@@ -84,6 +98,7 @@ Config.Economy = {
 	BaseEquipSlots = 3,
 	OfflineCapHours = 8,
 	OfflineFraction = 0.5, -- offline earnings run at half speed
+	BaseWalkSpeed = 16, -- default Roblox walk speed (the speed flask scales this)
 }
 
 -- The backpack caps how many UNIQUE cards you can hold (dupes stack free).
@@ -106,9 +121,9 @@ end
 -- ===== Rebirth =============================================================
 -- Rebirth needs a Legendary+ card and at least BaseCoins banked. Tokens scale
 -- as the fourth root of coins, so: 100M = 100 tokens, 1T = 1,000 tokens,
--- 10Q = 10,000 tokens. Rebirthing wipes coins, the purple tree, and every card
--- below Mythic (Legendaries included). Mythic+, backpack, rolls, the golden
--- tree, and the automation tree all stay.
+-- 10Q = 10,000 tokens. Rebirthing wipes coins, the HUB coin trees, and every
+-- card below Mythic (Legendaries included). Mythic+, backpack, rolls, the
+-- rebirth tree, the automation tree, and shop purchases all stay.
 Config.Rebirth = {
 	BaseCoins = 10000, -- minimum coins banked before a rebirth pays out
 	KeepTier = "Mythic", -- cards at/above this survive (Legendary Keeper lowers it)
@@ -130,77 +145,163 @@ Config.AutosaveInterval = 60
 Config.LeaderboardRefreshInterval = 60
 Config.LeaderboardSize = 10
 
--- ===== Upgrade tree ========================================================
--- The old purple coin tree is gone: rolling/speed/auto now live on the TV, and
--- coins/luck/slots/etc. live on the rebirth (gold) tree. Kept as an empty table
--- so the rest of the code (NodeById, world builder) needs no special-casing.
-Config.Tree = {}
+-- ===== layout helpers ======================================================
+-- Small turtle/arc helpers so the tree coordinates stay readable. Positions are
+-- {x, z} on the flat world; y is fixed by the builder.
 
--- ===== Golden (rebirth) tree ===============================================
--- A clean branching tree, ONE root (goldinc) with everything chained off it, on
--- the GOLD platform to the NORTH (+z). Bought with Rebirth Tokens. The gold
--- branch is the economy/speed path and leads to the Rebirth altar at the far end.
+-- An arc of `n` points around (cx, cz): angle sweeps from startDeg by stepDeg
+-- each step, radius from startR by stepR each step.
+local function arc(cx, cz, startDeg, stepDeg, startR, stepR, n)
+	local pts = {}
+	for i = 1, n do
+		local d = math.rad(startDeg + stepDeg * (i - 1))
+		local r = startR + stepR * (i - 1)
+		pts[i] = { cx + math.cos(d) * r, cz + math.sin(d) * r }
+	end
+	return pts
+end
+
+-- ===== HUB coin trees (Greed + Luck) =======================================
+-- On the central hub. Bought with COINS, stored in data.Upgrades, and WIPED on
+-- rebirth. A short shared trunk splits at "fork" into two ~10-node arms: Greed
+-- (money, pricier, the balanced long game) and Luck (rare odds, cheaper).
+local HUB = {}
+local function hnode(def)
+	def.IsRebirth = false
+	def.Area = "hub"
+	table.insert(HUB, def)
+end
+
+-- shared trunk (a mix of money + luck, climbs straight north from the centre)
+hnode({ Id = "seed", Name = "First Profits", Desc = "x1.5 ALL coin earnings", Branch = "Trunk", Pos = { 0, 14 }, Cost = 100 })
+hnode({ Id = "clover", Name = "Four-Leaf Clover", Desc = "+5% rare-tier chance", Branch = "Trunk", Pos = { 0, 26 }, Cost = 400, Requires = "seed" })
+hnode({ Id = "vault", Name = "First Vault", Desc = "x2 ALL coin earnings", Branch = "Trunk", Pos = { 0, 38 }, Cost = 1500, Requires = "clover" })
+hnode({ Id = "fork", Name = "The Fork", Desc = "+1 equip slot — then choose your path", Branch = "Trunk", Pos = { 0, 48 }, Cost = 4000, Requires = "vault" })
+
+-- Path of GREED — sweeps down the EAST side of the hub. Pricey but balanced;
+-- meant to be ground out once your rebirth tree is strong.
+do
+	local g = arc(0, 0, 64, -9, 52, 1.6, 10)
+	local defs = {
+		{ Id = "greed1", Name = "Greedy Hands", Desc = "x2 ALL coin earnings", Cost = 12000 },
+		{ Id = "greed2", Name = "Coin Magnet", Desc = "+100% dupe & sell value", Cost = 30000 },
+		{ Id = "greed3", Name = "Compound Interest", Desc = "x1.5 ALL coin earnings", Cost = 80000 },
+		{ Id = "greed4", Name = "Tax Haven", Desc = "+2 equip slots", Cost = 200000 },
+		{ Id = "greed5", Name = "Big Pockets", Desc = "+40 backpack capacity", Cost = 450000 },
+		{ Id = "greed6", Name = "Market Boom", Desc = "x2 ALL coin earnings", Cost = 1_000_000 },
+		{ Id = "greed7", Name = "Monopoly", Desc = "x1.5 coins & +50% sell value", Cost = 2_500_000 },
+		{ Id = "greed8", Name = "Gold Rush", Desc = "x2 ALL coin earnings", Cost = 6_000_000 },
+		{ Id = "greed9", Name = "Empire", Desc = "+3 equip slots", Cost = 15_000_000 },
+		{ Id = "greed10", Name = "Midas Touch", Desc = "x3 ALL coin earnings", Cost = 40_000_000 },
+	}
+	for i, d in defs do
+		d.Branch = "Greed"
+		d.Pos = g[i]
+		d.Requires = if i == 1 then "fork" else defs[i - 1].Id
+		hnode(d)
+	end
+end
+
+-- Path of LUCK — sweeps down the WEST side. Cheaper; all about rare odds.
+do
+	local l = arc(0, 0, 116, 9, 52, 1.6, 10)
+	local defs = {
+		{ Id = "luck1", Name = "Rabbit's Foot", Desc = "+8% rare-tier chance", Cost = 8000 },
+		{ Id = "luck2", Name = "Wishbone", Desc = "+8% rare-tier chance", Cost = 20000 },
+		{ Id = "luck3", Name = "Horseshoe", Desc = "x2 legend chance", Cost = 45000 },
+		{ Id = "luck4", Name = "Shooting Star", Desc = "+10% rare-tier chance", Cost = 110000 },
+		{ Id = "luck5", Name = "Lucky Streak", Desc = "Every 7th roll is Rare or better", Cost = 250000 },
+		{ Id = "luck6", Name = "Fortune's Favor", Desc = "+12% rare-tier chance", Cost = 600000 },
+		{ Id = "luck7", Name = "Black Cat", Desc = "x2 legend chance", Cost = 1_400_000 },
+		{ Id = "luck8", Name = "Cosmic Dice", Desc = "+15% rare-tier chance", Cost = 3_500_000 },
+		{ Id = "luck9", Name = "Jackpot", Desc = "x3 legend chance", Cost = 9_000_000 },
+		{ Id = "luck10", Name = "Destiny", Desc = "+20% rare-tier chance", Cost = 22_000_000 },
+	}
+	for i, d in defs do
+		d.Branch = "Luck"
+		d.Pos = l[i]
+		d.Requires = if i == 1 then "fork" else defs[i - 1].Id
+		hnode(d)
+	end
+end
+
+Config.Tree = HUB -- the hub coin trees live in the old "Tree" slot (coins)
+
+-- ===== REBIRTH tree (gold / yellow island, tokens) =========================
+-- One root that SPLITS into five organic branches (with one short offshoot that
+-- dead-ends, for that hand-grown look). Bought with Rebirth Tokens; permanent.
+-- Island is centred to the NORTH; coords here are absolute world {x, z}.
 local R = {}
 local function rnode(def)
 	def.IsRebirth = true
-	def.Branch = "Rebirth"
+	def.Branch = def.Branch or "Rebirth"
 	def.Area = "gold"
 	table.insert(R, def)
 end
 
--- ROOT (the only repeatable node; cost rockets 20x/level so it isn't spammed)
-rnode({ Id = "goldinc", Name = "Golden Income", Desc = "x2 ALL coin earnings, forever (cost 20x each level)", Pos = { 0, 112 }, Cost = 1, CostMult = 20, MaxLevel = nil })
+-- root (the one repeatable node; cost rockets 20x/level so it isn't spammed)
+rnode({ Id = "core", Name = "Rebirth Core", Desc = "x2 ALL coin earnings, forever (cost 20x each level)", Pos = { 0, 150 }, Cost = 1, CostMult = 20, MaxLevel = nil })
 
--- spine (economy)
-rnode({ Id = "dupegold", Name = "Dupe Tycoon", Desc = "+100% dupe & sell value", Pos = { 0, 132 }, Cost = 4, Requires = "goldinc" })
-rnode({ Id = "bigbag", Name = "Bottomless Bag", Desc = "+30 backpack capacity", Pos = { 0, 152 }, Cost = 4, Requires = "dupegold" })
-rnode({ Id = "megacoin", Name = "Mega Income", Desc = "x3 ALL coin earnings (one-time)", Pos = { 0, 172 }, Cost = 25, Requires = "bigbag" })
+-- Wealth branch (due north) + a short offshoot that ends
+rnode({ Id = "rw1", Name = "Old Money", Desc = "x2 ALL coin earnings", Pos = { 0, 166 }, Cost = 3, Requires = "core" })
+rnode({ Id = "rw2", Name = "Dynasty", Desc = "+200% dupe & sell value", Pos = { 0, 184 }, Cost = 6, Requires = "rw1" })
+rnode({ Id = "rw3", Name = "Fortune 500", Desc = "x3 ALL coin earnings", Pos = { 0, 202 }, Cost = 14, Requires = "rw2" })
+rnode({ Id = "rw4", Name = "Trust Fund", Desc = "+50K starting coins after rebirth", Pos = { 0, 220 }, Cost = 18, Requires = "rw3" })
+rnode({ Id = "rw5", Name = "Dream Profits", Desc = "Offline earnings: full rate, 24h cap", Pos = { 16, 216 }, Cost = 20, Requires = "rw3" })
 
--- left branch (speed / qol)
-rnode({ Id = "timelord", Name = "Time Lord", Desc = "Manual roll cooldown x0.6", Pos = { -26, 124 }, Cost = 4, Requires = "goldinc" })
-rnode({ Id = "overdrive", Name = "Scanner Overdrive", Desc = "Fresh accounts found 2x faster", Pos = { -26, 146 }, Cost = 3, Requires = "timelord" })
-rnode({ Id = "quickstart", Name = "Quick Start", Desc = "+25K starting coins after rebirth", Pos = { -26, 168 }, Cost = 3, Requires = "overdrive" })
-rnode({ Id = "dreamprofit", Name = "Dream Profits", Desc = "Offline earnings: full rate, 24h cap", Pos = { -48, 168 }, Cost = 5, Requires = "quickstart" })
+-- Luck branch (north-east)
+rnode({ Id = "rl1", Name = "Eternal Luck", Desc = "+15% rare-tier chance", Branch = "RLuck", Pos = { 13, 164 }, Cost = 4, Requires = "core" })
+rnode({ Id = "rl2", Name = "God Magnet", Desc = "x3 legend chance", Branch = "RLuck", Pos = { 25, 178 }, Cost = 7, Requires = "rl1" })
+rnode({ Id = "rl3", Name = "Cosmic Favor", Desc = "+15% rare-tier chance", Branch = "RLuck", Pos = { 35, 194 }, Cost = 12, Requires = "rl2" })
+rnode({ Id = "rl4", Name = "Pantheon", Desc = "x3 legend chance AGAIN", Branch = "RLuck", Pos = { 43, 210 }, Cost = 20, Requires = "rl3" })
 
--- right branch (slots / keep / tokens)
-rnode({ Id = "slotmaster", Name = "Slot Master", Desc = "+1 equip slot", Pos = { 26, 124 }, Cost = 4, Requires = "goldinc" })
-rnode({ Id = "keeper", Name = "Legendary Keeper", Desc = "Legendary cards survive rebirth", Pos = { 26, 146 }, Cost = 10, Requires = "slotmaster" })
-rnode({ Id = "tokenhoard", Name = "Token Hoarder", Desc = "+1 token from every rebirth", Pos = { 26, 168 }, Cost = 12, MaxLevel = 3, CostMult = 1, Requires = "keeper" })
+-- Speed branch (north-west) — the rebirth speed nodes raise the Roll-Speed cap
+rnode({ Id = "rs1", Name = "Time Lord", Desc = "Manual roll cooldown x0.6", Branch = "RSpeed", Pos = { -13, 164 }, Cost = 4, Requires = "core" })
+rnode({ Id = "rs2", Name = "Overclock", Desc = "+2 max Roll-Speed levels", Branch = "RSpeed", Pos = { -25, 178 }, Cost = 8, Requires = "rs1" })
+rnode({ Id = "rs3", Name = "Scanner Overdrive", Desc = "Fresh accounts found 2x faster", Branch = "RSpeed", Pos = { -35, 194 }, Cost = 6, Requires = "rs2" })
+rnode({ Id = "rs4", Name = "Light Speed", Desc = "+2 max Roll-Speed levels", Branch = "RSpeed", Pos = { -43, 210 }, Cost = 14, Requires = "rs3" })
+
+-- Capacity branch (east)
+rnode({ Id = "rc1", Name = "Deep Pockets", Desc = "+1 equip slot", Branch = "RCap", Pos = { 20, 156 }, Cost = 5, Requires = "core" })
+rnode({ Id = "rc2", Name = "Bottomless Bag", Desc = "+40 backpack capacity", Branch = "RCap", Pos = { 38, 162 }, Cost = 6, Requires = "rc1" })
+rnode({ Id = "rc3", Name = "Hoarder", Desc = "+1 equip slot", Branch = "RCap", Pos = { 53, 172 }, Cost = 12, Requires = "rc2" })
+rnode({ Id = "rc4", Name = "Vault Lord", Desc = "+2 equip slots", Branch = "RCap", Pos = { 62, 186 }, Cost = 22, Requires = "rc3" })
+
+-- Meta branch (west) — tokens & keeping cards through rebirth
+rnode({ Id = "rm1", Name = "Token Tithe", Desc = "+2 tokens from every rebirth", Branch = "RMeta", Pos = { -20, 156 }, Cost = 6, Requires = "core" })
+rnode({ Id = "rm2", Name = "Legendary Keeper", Desc = "Legendary cards survive rebirth", Branch = "RMeta", Pos = { -38, 162 }, Cost = 10, Requires = "rm1" })
+rnode({ Id = "rm3", Name = "Token Hoarder", Desc = "+3 tokens from every rebirth", Branch = "RMeta", Pos = { -53, 172 }, Cost = 18, Requires = "rm2" })
 
 Config.RebirthTree = R
 
--- ===== Green (luck + automation) tree ======================================
--- On the GREEN platform to the SOUTH (-z). The luck branch is bought with
--- Rebirth Tokens (same as gold). The automation branch (auto-equip/sell/rebirth)
--- only appears once you've bought Automation at the Card Opener (100 tokens),
--- and it's marked IsAutomation. One root each, everything chained.
+-- ===== AUTOMATION tree (green island, tokens) ==============================
+-- The root (autocore) UNLOCKS auto-roll the moment you buy it (no separate "Buy
+-- Automation" anymore). Everything else hangs off it. Bought with Tokens;
+-- permanent. Island is centred to the SOUTH; coords are absolute world {x, z}.
 local A = {}
-local function gnode(def)
-	def.IsRebirth = true
-	def.Branch = "Luck"
-	def.Area = "green"
-	table.insert(A, def)
-end
 local function anode(def)
 	def.IsRebirth = true
 	def.Branch = "Automation"
-	def.IsAutomation = true
 	def.Area = "green"
+	-- every automation node except the root needs the root bought first
+	def.IsAutomation = def.Id ~= "autocore"
 	table.insert(A, def)
 end
 
--- luck root + chain
-gnode({ Id = "eternalluck", Name = "Eternal Luck", Desc = "+10% rare chance", Pos = { 0, -112 }, Cost = 3 })
-gnode({ Id = "luckyseven", Name = "Lucky Sevens", Desc = "Every 7th roll is Rare or better", Pos = { 0, -132 }, Cost = 6, Requires = "eternalluck" })
-gnode({ Id = "godmagnet", Name = "God Magnet", Desc = "3x chance to roll a legend", Pos = { 0, -152 }, Cost = 5, Requires = "luckyseven" })
-gnode({ Id = "pantheon", Name = "Pantheon", Desc = "3x legend chance AGAIN", Pos = { 0, -172 }, Cost = 12, Requires = "godmagnet" })
-gnode({ Id = "luckburst", Name = "Luck Burst", Desc = "+15% rare chance", Pos = { -26, -124 }, Cost = 6, Requires = "eternalluck" })
+anode({ Id = "autocore", Name = "Automaton Core", Desc = "Unlocks AUTO-ROLL on the TV (root)", Pos = { 0, -150 }, Cost = 8, MaxLevel = 1 })
 
--- automation cluster (needs Automation bought at the TV)
-anode({ Id = "autocore", Name = "Automaton Core", Desc = "Powers automation (root)", Pos = { 28, -124 }, Cost = 3, MaxLevel = 1 })
-anode({ Id = "autoequip", Name = "Auto Equip", Desc = "Always keeps your best cards equipped", Pos = { 50, -112 }, Cost = 6, Requires = "autocore" })
-anode({ Id = "autosell", Name = "Auto Liquidate", Desc = "Auto-sells duplicate cards for coins", Pos = { 50, -136 }, Cost = 8, Requires = "autocore" })
-anode({ Id = "autorebirth", Name = "Auto Rebirth", Desc = "Rebirths automatically when worth it", Pos = { 28, -160 }, Cost = 25, Requires = "autocore" })
+-- equip / sell line (west arm)
+anode({ Id = "autoequip", Name = "Auto Equip", Desc = "Always keeps your best cards equipped", Pos = { -18, -162 }, Cost = 6, Requires = "autocore" })
+anode({ Id = "autosell", Name = "Auto Liquidate", Desc = "Auto-sells duplicate cards for coins", Pos = { -30, -178 }, Cost = 8, Requires = "autoequip" })
+anode({ Id = "smartsell", Name = "Smart Seller", Desc = "Also auto-sells the rarities you toggled off", Pos = { -42, -196 }, Cost = 12, Requires = "autosell" })
+
+-- auto-roll speed line (east arm)
+anode({ Id = "overclock1", Name = "Overclock I", Desc = "Auto-roll 25% faster", Pos = { 18, -162 }, Cost = 6, Requires = "autocore" })
+anode({ Id = "overclock2", Name = "Overclock II", Desc = "Auto-roll 30% faster again", Pos = { 30, -178 }, Cost = 10, Requires = "overclock1" })
+anode({ Id = "overclock3", Name = "Overclock III", Desc = "Auto-roll 40% faster again", Pos = { 42, -196 }, Cost = 16, Requires = "overclock2" })
+
+-- rebirth automation (centre arm)
+anode({ Id = "autorebirth", Name = "Auto Rebirth", Desc = "Rebirths automatically when worth it", Pos = { 0, -172 }, Cost = 25, Requires = "autocore" })
 
 Config.AutomationTree = A
 
@@ -226,14 +327,16 @@ function Config.GetBridgeCost(which, partsBuilt)
 	return math.floor(cost)
 end
 
--- ===== Shop ================================================================
--- A little store to the WEST. Permanent upgrades bought with coins (the coins
--- your cards earn). Each is a repeatable upgrade with a compounding cost.
+-- ===== Shop (imported store, west) =========================================
+-- The five items from the uploaded place. Bought with COINS via a proximity
+-- prompt on each physical item. RAM sticks level up (raising the roll-speed cap);
+-- the lucky block is a repeatable consumable; the rest are one-time unlocks.
 Config.Shop = {
-	{ Id = "luckbrew", Name = "Luck Brew", Desc = "+3% rare chance", Cost = 5000, Mult = 1.6, Value = 0.03 },
-	{ Id = "speedbrew", Name = "Speed Brew", Desc = "Manual roll cooldown x0.95", Cost = 8000, Mult = 1.7, Value = 0.95 },
-	{ Id = "fortune", Name = "Fortune Tonic", Desc = "x1.25 coin earnings", Cost = 12000, Mult = 1.8, Value = 1.25 },
-	{ Id = "tvslot", Name = "TV Upgrade", Desc = "+1 equip slot", Cost = 25000, Mult = 2.2, Value = 1 },
+	{ Id = "rams", ItemName = "Rams", Name = "RAM Sticks", Desc = "+1 max Roll-Speed level (cap 20 → 40)", Cost = 2500, Mult = 1.55, MaxLevel = 20 },
+	{ Id = "speedcoil", ItemName = "SpeedCoil", Name = "Speed Coil", Desc = "A coil tool: +16 walk speed while held", Cost = 9000, Mult = 1, MaxLevel = 1 },
+	{ Id = "flask3", ItemName = "Flask3", Name = "Speed Flask", Desc = "+50% walk speed, permanently", Cost = 18000, Mult = 1, MaxLevel = 1 },
+	{ Id = "luckyblock", ItemName = "Lucky Block", Name = "Lucky Block", Desc = "Open a guaranteed Mythic+ card (with bonus value)", Cost = 60000, Mult = 1.35 },
+	{ Id = "flask2", ItemName = "Flask2withlid", Name = "Legendary Flask", Desc = "Rolls SKIP Common→Epic — only Legendary+!", Cost = 750000, Mult = 1, MaxLevel = 1 },
 }
 Config.ShopById = {}
 for _, item in Config.Shop do
@@ -244,47 +347,48 @@ function Config.GetShopCost(item, level)
 	return math.floor(item.Cost * item.Mult ^ level)
 end
 
-Config.AutomationTokenCost = 100 -- buy Automation at the Card Opener
+-- the lucky block grants a random tier in this (inclusive) range, weighted toward
+-- the low end, with a value multiplier on top
+Config.LuckyBlock = { MinTier = "Mythic", MaxTier = "Divine", ValueMult = 1.6 }
 
 Config.NodeById = {}
-for _, treeNode in Config.Tree do
-	if treeNode.MaxLevel == nil and treeNode.CostMult == nil then
-		treeNode.MaxLevel = 1 -- plain nodes are one-time purchases
+local function indexTree(tree)
+	for _, treeNode in tree do
+		if treeNode.MaxLevel == nil and treeNode.CostMult == nil then
+			treeNode.MaxLevel = 1 -- plain nodes are one-time purchases
+		end
+		Config.NodeById[treeNode.Id] = treeNode
 	end
-	Config.NodeById[treeNode.Id] = treeNode
 end
-for _, treeNode in Config.RebirthTree do
-	if treeNode.MaxLevel == nil and treeNode.CostMult == nil then
-		treeNode.MaxLevel = 1
-	end
-	Config.NodeById[treeNode.Id] = treeNode
-end
-for _, treeNode in Config.AutomationTree do
-	if treeNode.MaxLevel == nil and treeNode.CostMult == nil then
-		treeNode.MaxLevel = 1
-	end
-	Config.NodeById[treeNode.Id] = treeNode
-end
+indexTree(Config.Tree)
+indexTree(Config.RebirthTree)
+indexTree(Config.AutomationTree)
 
 Config.BranchColors = {
-	Rolling = Color3.fromRGB(140, 100, 255),
-	Luck = Color3.fromRGB(90, 210, 120),
-	Economy = Color3.fromRGB(255, 190, 60),
-	Endgame = Color3.fromRGB(230, 60, 200),
+	Trunk = Color3.fromRGB(205, 195, 160),
+	Greed = Color3.fromRGB(255, 200, 70),
+	Luck = Color3.fromRGB(95, 210, 125),
 	Rebirth = Color3.fromRGB(255, 215, 60),
-	Automation = Color3.fromRGB(100, 200, 100),
+	RLuck = Color3.fromRGB(120, 230, 150),
+	RSpeed = Color3.fromRGB(120, 190, 255),
+	RCap = Color3.fromRGB(235, 170, 95),
+	RMeta = Color3.fromRGB(220, 150, 255),
+	Automation = Color3.fromRGB(100, 200, 140),
 }
 
 function Config.GetNodeCost(treeNode, level)
 	return math.floor(treeNode.Cost * (treeNode.CostMult or 1) ^ level)
 end
 
--- Turns a player's rebirth-tree levels + manual roll-speed level into effective
--- stats. (The purple tree is gone; rolling is one card at a time.)
-function Config.ComputeStats(rebirthUpgrades, rollSpeedLevel, shopUpgrades)
-	rebirthUpgrades = rebirthUpgrades or {}
-	rollSpeedLevel = rollSpeedLevel or 0
-	shopUpgrades = shopUpgrades or {}
+-- Turns a player's data (rebirth tree, hub coin trees, roll-speed level, shop
+-- purchases) into effective stats. Pass the whole data table.
+function Config.ComputeStats(data)
+	data = data or {}
+	local rebirthUpgrades = data.RebirthUpgrades or {}
+	local coinUpgrades = data.Upgrades or {}
+	local rollSpeedLevel = data.RollSpeedLevel or 0
+	local shopUpgrades = data.ShopUpgrades or {}
+
 	local stats = {
 		RollCooldown = Config.Roll.BaseCooldown,
 		LuckChance = Config.Roll.BaseLuckChance,
@@ -301,66 +405,111 @@ function Config.ComputeStats(rebirthUpgrades, rollSpeedLevel, shopUpgrades)
 		BonusTokens = 0,
 		KeepLegendary = false,
 		LuckySevens = false,
+		MaxRollSpeedLevel = Config.RollSpeed.MaxLevel,
+		WalkSpeedMult = 1,
+		HasSpeedCoil = false,
+		RarityFloor = nil, -- e.g. "Legendary": every roll graded up to at least this
+		AutoSpeedMult = 1, -- multiplies the (non-fast) auto-roll interval
 		-- automation island
 		AutoCore = false,
 		AutoEquipUnlocked = false,
 		AutoSellUnlocked = false,
+		SmartSellUnlocked = false,
 		AutoRebirthUnlocked = false,
 	}
 
 	local function rLevel(id)
 		return rebirthUpgrades[id] or 0
 	end
-
-	-- manual roll speed: TV upgrade + Time Lord rebirth bonus
-	stats.RollCooldown *= Config.RollSpeed.CooldownFactor ^ rollSpeedLevel
-	if rLevel("timelord") > 0 then
-		stats.RollCooldown *= 0.6
+	local function cLevel(id)
+		return coinUpgrades[id] or 0
+	end
+	local function sLevel(id)
+		return shopUpgrades[id] or 0
 	end
 
-	-- coins
-	stats.CoinMult *= 2 ^ rLevel("goldinc")
-	stats.CoinMult *= 3 ^ rLevel("megacoin")
+	-- ----- HUB coin trees (reset each rebirth) -----
+	-- trunk
+	if cLevel("seed") > 0 then stats.CoinMult *= 1.5 end
+	stats.LuckChance += 0.05 * cLevel("clover")
+	if cLevel("vault") > 0 then stats.CoinMult *= 2 end
+	stats.EquipSlots += cLevel("fork")
+	-- greed (money)
+	if cLevel("greed1") > 0 then stats.CoinMult *= 2 end
+	stats.DupeMult += 1 * cLevel("greed2")
+	if cLevel("greed3") > 0 then stats.CoinMult *= 1.5 end
+	stats.EquipSlots += 2 * cLevel("greed4")
+	stats.BackpackBonus += 40 * cLevel("greed5")
+	if cLevel("greed6") > 0 then stats.CoinMult *= 2 end
+	if cLevel("greed7") > 0 then
+		stats.CoinMult *= 1.5
+		stats.DupeMult += 0.5
+	end
+	if cLevel("greed8") > 0 then stats.CoinMult *= 2 end
+	stats.EquipSlots += 3 * cLevel("greed9")
+	if cLevel("greed10") > 0 then stats.CoinMult *= 3 end
 	-- luck
-	stats.LuckChance += 0.10 * rLevel("eternalluck")
-	stats.LuckChance += 0.15 * rLevel("luckburst")
-	-- economy / qol
-	stats.StartCoins = 25000 * rLevel("quickstart")
-	stats.BackpackBonus += 30 * rLevel("bigbag")
-	stats.DupeMult += 1 * rLevel("dupegold")
-	if rLevel("overdrive") > 0 then
-		stats.FreshInterval *= 0.5
-	end
-	stats.EquipSlots += rLevel("slotmaster")
-	stats.LuckySevens = rLevel("luckyseven") > 0
-	stats.BonusTokens = rLevel("tokenhoard")
-	stats.KeepLegendary = rLevel("keeper") > 0
-	if rLevel("godmagnet") > 0 then
-		stats.GodChance *= 3
-	end
-	if rLevel("pantheon") > 0 then
-		stats.GodChance *= 3
-	end
-	if rLevel("dreamprofit") > 0 then
+	stats.LuckChance += 0.08 * cLevel("luck1")
+	stats.LuckChance += 0.08 * cLevel("luck2")
+	if cLevel("luck3") > 0 then stats.GodChance *= 2 end
+	stats.LuckChance += 0.10 * cLevel("luck4")
+	if cLevel("luck5") > 0 then stats.LuckySevens = true end
+	stats.LuckChance += 0.12 * cLevel("luck6")
+	if cLevel("luck7") > 0 then stats.GodChance *= 2 end
+	stats.LuckChance += 0.15 * cLevel("luck8")
+	if cLevel("luck9") > 0 then stats.GodChance *= 3 end
+	stats.LuckChance += 0.20 * cLevel("luck10")
+
+	-- ----- REBIRTH tree (permanent) -----
+	stats.CoinMult *= 2 ^ rLevel("core")
+	-- wealth
+	if rLevel("rw1") > 0 then stats.CoinMult *= 2 end
+	stats.DupeMult += 2 * rLevel("rw2")
+	if rLevel("rw3") > 0 then stats.CoinMult *= 3 end
+	stats.StartCoins += 50000 * rLevel("rw4")
+	if rLevel("rw5") > 0 then
 		stats.OfflineUnlocked = true
 		stats.OfflineFraction = 1
 		stats.OfflineCapHours = 24
 	end
+	-- luck
+	stats.LuckChance += 0.15 * rLevel("rl1")
+	if rLevel("rl2") > 0 then stats.GodChance *= 3 end
+	stats.LuckChance += 0.15 * rLevel("rl3")
+	if rLevel("rl4") > 0 then stats.GodChance *= 3 end
+	-- speed
+	if rLevel("rs1") > 0 then stats.RollCooldown *= 0.6 end
+	stats.MaxRollSpeedLevel += 2 * rLevel("rs2")
+	if rLevel("rs3") > 0 then stats.FreshInterval *= 0.5 end
+	stats.MaxRollSpeedLevel += 2 * rLevel("rs4")
+	-- capacity
+	stats.EquipSlots += rLevel("rc1")
+	stats.BackpackBonus += 40 * rLevel("rc2")
+	stats.EquipSlots += rLevel("rc3")
+	stats.EquipSlots += 2 * rLevel("rc4")
+	-- meta
+	stats.BonusTokens += 2 * rLevel("rm1")
+	if rLevel("rm2") > 0 then stats.KeepLegendary = true end
+	stats.BonusTokens += 3 * rLevel("rm3")
 
-	-- automation island
+	-- ----- AUTOMATION tree (permanent) -----
 	stats.AutoCore = rLevel("autocore") > 0
 	stats.AutoEquipUnlocked = rLevel("autoequip") > 0
 	stats.AutoSellUnlocked = rLevel("autosell") > 0
+	stats.SmartSellUnlocked = rLevel("smartsell") > 0
 	stats.AutoRebirthUnlocked = rLevel("autorebirth") > 0
+	if rLevel("overclock1") > 0 then stats.AutoSpeedMult *= 0.75 end
+	if rLevel("overclock2") > 0 then stats.AutoSpeedMult *= 0.70 end
+	if rLevel("overclock3") > 0 then stats.AutoSpeedMult *= 0.60 end
 
-	-- shop upgrades (permanent, coin-bought)
-	local function sLevel(id)
-		return shopUpgrades[id] or 0
-	end
-	stats.LuckChance += 0.03 * sLevel("luckbrew")
-	stats.RollCooldown *= 0.95 ^ sLevel("speedbrew")
-	stats.CoinMult *= 1.25 ^ sLevel("fortune")
-	stats.EquipSlots += sLevel("tvslot")
+	-- ----- SHOP items (permanent, coin-bought) -----
+	stats.MaxRollSpeedLevel += sLevel("rams") -- each RAM stick = +1 cap
+	if sLevel("flask3") > 0 then stats.WalkSpeedMult *= 1.5 end
+	stats.HasSpeedCoil = sLevel("speedcoil") > 0
+	if sLevel("flask2") > 0 then stats.RarityFloor = "Legendary" end
+
+	-- manual roll speed (TV upgrade), applied last so caps/floors are final
+	stats.RollCooldown *= Config.RollSpeed.CooldownFactor ^ rollSpeedLevel
 
 	stats.RollCooldown = math.max(stats.RollCooldown, Config.Roll.MinCooldown)
 	stats.LuckChance = math.min(stats.LuckChance, Config.Roll.MaxLuckChance)
