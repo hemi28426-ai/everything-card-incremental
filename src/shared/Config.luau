@@ -413,6 +413,69 @@ end
 
 Config.LuckyBlock = { MinTier = "Mythic", MaxTier = "Divine", ValueMult = 1.6 }
 
+-- ===== Card Packs ==========================================================
+-- Equippable boosts, one at a time, via the "Pack Loader 3000". You first buy
+-- the loader (needs Rare cards), then each pack AUTO-UNLOCKS the moment you meet
+-- its requirement and appears in the loader. Requirements are things you OWN/HAVE
+-- (not consumed). Art (Image) is filled in later; for now each shows an icon.
+Config.PackLoader = {
+	RareCardsNeeded = 5, -- Rare-tier cards you must own to unlock the loader
+	CoinCost = 250000, -- plus this many coins
+}
+
+Config.Packs = {
+	{
+		Id = "basic",
+		Name = "Basic Pack",
+		Icon = "🃏",
+		Color = Color3.fromRGB(120, 200, 255),
+		Image = "", -- set to "rbxassetid://..." when you have the texture
+		Desc = "↑ Legendary odds + 5 free Roll-Speed levels",
+		ReqText = "Unlocks with the Pack Loader",
+		Req = {}, -- unlocks as soon as the loader is bought
+	},
+	{
+		Id = "rebirth",
+		Name = "Rebirth Pack",
+		Icon = "♻️",
+		Color = Color3.fromRGB(255, 215, 80),
+		Image = "",
+		Desc = "+50% tokens & more Legendary+ — but rolls are 2x slower",
+		ReqText = "Have 1,000 Rebirth Tokens",
+		Req = { Tokens = 1000 },
+	},
+	{
+		Id = "automation",
+		Name = "Automation Pack",
+		Icon = "🤖",
+		Color = Color3.fromRGB(120, 220, 150),
+		Image = "",
+		Desc = "Automation runs much faster & auto-buys Roll Speed",
+		ReqText = "Own every Automation upgrade",
+		Req = { AllAutomation = true },
+	},
+	{
+		Id = "ultimate",
+		Name = "Ultimate Pack",
+		Icon = "👑",
+		Color = Color3.fromRGB(255, 120, 200),
+		Image = "",
+		Desc = "+20 Roll-Speed levels, Mythic+ boost, ALL prices halved",
+		ReqText = "1,000 Tokens + every upgrade + a Divine card",
+		Req = { Tokens = 1000, AllUpgrades = true, DivineCard = true },
+	},
+}
+Config.PackById = {}
+for _, pack in Config.Packs do
+	Config.PackById[pack.Id] = pack
+end
+
+-- Apply the equipped pack's price multiplier to a coin/token cost.
+function Config.ApplyPrice(cost, stats)
+	local mult = (stats and stats.PriceMult) or 1
+	return math.max(1, math.floor(cost * mult))
+end
+
 Config.NodeById = {}
 local function indexTree(tree)
 	for _, treeNode in tree do
@@ -476,6 +539,14 @@ function Config.ComputeStats(data)
 		AutoSellUnlocked = false,
 		SmartSellUnlocked = false,
 		AutoRebirthUnlocked = false,
+		-- card packs (one equipped at a time)
+		BonusRollSpeedLevels = 0, -- free roll-speed levels (don't need buying / cap)
+		LegendaryChance = 0, -- chance per roll to grade the card up to >= Legendary
+		MythicChance = 0, -- chance per roll to grade the card up to >= Mythic
+		TokenMult = 1, -- multiplies tokens earned on rebirth
+		PriceMult = 1, -- multiplies coin/token costs (Ultimate halves them)
+		RollCooldownMult = 1, -- extra cooldown factor (Rebirth pack doubles it)
+		AutoBuySpeed = false, -- automation pack auto-buys roll-speed levels
 	}
 
 	local function rLevel(id)
@@ -562,7 +633,27 @@ function Config.ComputeStats(data)
 	stats.HasSpeedCoil = sLevel("speedcoil") > 0
 	if sLevel("flask2") > 0 then stats.RarityFloor = "Legendary" end
 
-	stats.RollCooldown *= Config.RollSpeed.CooldownFactor ^ rollSpeedLevel
+	-- ----- CARD PACK (one equipped at a time) -----
+	local pack = data.EquippedPack
+	if pack == "basic" then
+		stats.LegendaryChance += 0.15
+		stats.BonusRollSpeedLevels += 5
+	elseif pack == "rebirth" then
+		stats.LegendaryChance += 0.30
+		stats.TokenMult *= 1.5
+		stats.RollCooldownMult *= 2 -- the downside: rolling is 2x slower
+	elseif pack == "automation" then
+		stats.AutoSpeedMult *= 0.4
+		stats.AutoBuySpeed = true
+	elseif pack == "ultimate" then
+		stats.BonusRollSpeedLevels += 20
+		stats.MythicChance += 0.20
+		stats.PriceMult = 0.5
+	end
+
+	-- roll speed: bought levels + any free pack levels, then the pack cooldown mult
+	stats.RollCooldown *= Config.RollSpeed.CooldownFactor ^ (rollSpeedLevel + stats.BonusRollSpeedLevels)
+	stats.RollCooldown *= stats.RollCooldownMult
 
 	stats.RollCooldown = math.max(stats.RollCooldown, Config.Roll.MinCooldown)
 	stats.LuckChance = math.min(stats.LuckChance, Config.Roll.MaxLuckChance)

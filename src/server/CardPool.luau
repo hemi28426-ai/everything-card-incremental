@@ -254,6 +254,14 @@ function CardPool.Draw(stats, forcePool, isPrimary)
 		card = promoteTier(card, "Rare")
 	end
 
+	-- card-pack boosts: a chance per roll to grade the card up to Mythic / Legendary
+	if (stats.MythicChance or 0) > 0 and math.random() < stats.MythicChance then
+		card = promoteTier(card, "Mythic")
+	end
+	if (stats.LegendaryChance or 0) > 0 and math.random() < stats.LegendaryChance then
+		card = promoteTier(card, "Legendary")
+	end
+
 	-- rarity floor (the Legendary Flask): every roll graded up to at least this
 	-- tier, so Common→Epic are skipped entirely
 	if stats.RarityFloor then

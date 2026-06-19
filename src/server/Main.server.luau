@@ -42,6 +42,8 @@ local buyRollSpeedRemote = makeRemote("BuyRollSpeed")
 local rebirthRemote = makeRemote("Rebirth")
 local setAutoRebirthRemote = makeRemote("SetAutoRebirth")
 local collectionViewRemote = makeRemote("CollectionView")
+local unlockPackLoaderRemote = makeRemote("UnlockPackLoader")
+local equipPackRemote = makeRemote("EquipPack")
 local stateRemote = makeRemote("StateChanged")
 local rollResultRemote = makeRemote("RollResult")
 local tickerRemote = makeRemote("Ticker")
@@ -100,6 +102,91 @@ local function backpackCapacity(session)
 	return Config.GetBackpackCapacity(session.Data.BackpackLevel) + session.Stats.BackpackBonus
 end
 
+-- ===== card-pack requirements ==============================================
+
+-- total copies of a given tier the player owns
+local function tierCardCount(data, tierName)
+	local n = 0
+	for _, card in data.Cards do
+		if card.Tier == tierName then
+			n += card.Count
+		end
+	end
+	return n
+end
+
+local function ownsTierOrHigher(data, tierName)
+	local needed = Config.TierByName[tierName].Index
+	for _, card in data.Cards do
+		local tier = Config.TierByName[card.Tier]
+		if tier and tier.Index >= needed then
+			return true
+		end
+	end
+	return false
+end
+
+local function allAutomationOwned(data)
+	for _, treeNode in Config.AutomationTree do
+		if (data.RebirthUpgrades[treeNode.Id] or 0) < 1 then
+			return false
+		end
+	end
+	return true
+end
+
+-- every upgrade in the game bought at least once (all three trees + all shop items)
+local function allUpgradesOwned(data)
+	for _, treeNode in Config.NodeById do
+		local levels = if treeNode.IsRebirth then data.RebirthUpgrades else data.Upgrades
+		if (levels[treeNode.Id] or 0) < 1 then
+			return false
+		end
+	end
+	for _, item in Config.Shop do
+		if (data.ShopUpgrades[item.Id] or 0) < 1 then
+			return false
+		end
+	end
+	return true
+end
+
+-- does the player meet a pack's unlock requirement right now?
+local function packRequirementMet(data, pack)
+	local req = pack.Req
+	if req.Tokens and data.RebirthTokens < req.Tokens then
+		return false
+	end
+	if req.AllAutomation and not allAutomationOwned(data) then
+		return false
+	end
+	if req.AllUpgrades and not allUpgradesOwned(data) then
+		return false
+	end
+	if req.DivineCard and not ownsTierOrHigher(data, "Divine") then
+		return false
+	end
+	return true
+end
+
+-- Auto-unlock any packs whose requirements are now met (only once the Pack
+-- Loader itself is bought). Returns true if anything newly unlocked.
+local function refreshPackUnlocks(player, session)
+	local data = session.Data
+	if not data.PackLoaderUnlocked then
+		return false
+	end
+	local changed = false
+	for _, pack in Config.Packs do
+		if not data.UnlockedPacks[pack.Id] and packRequirementMet(data, pack) then
+			data.UnlockedPacks[pack.Id] = true
+			changed = true
+			tickerRemote:FireClient(player, ("📦 Card Pack unlocked: %s! Equip it at the Pack Loader 3000."):format(pack.Name))
+		end
+	end
+	return changed
+end
+
 local function buildState(session, includeCards)
 	local data = session.Data
 	local tokensIfNow = Config.GetRebirthTokens(data.Coins)
@@ -125,6 +212,10 @@ local function buildState(session, includeCards)
 		RollSpeedCost = Config.GetRollSpeedCost(data.RollSpeedLevel),
 		Bridges = data.Bridges,
 		ShopUpgrades = data.ShopUpgrades,
+		PackLoaderUnlocked = data.PackLoaderUnlocked == true,
+		UnlockedPacks = data.UnlockedPacks,
+		EquippedPack = data.EquippedPack,
+		RareCardCount = tierCardCount(data, "Rare"),
 		HasFastAuto = session.HasFastAuto == true,
 		AutoInterval = if session.HasFastAuto then Config.Roll.AutoIntervalFast else Config.Roll.AutoInterval,
 		Stats = session.Stats,
@@ -447,7 +538,7 @@ local function onBuyUpgrade(player, nodeId)
 	if treeNode.IsAutomation and not data.AutomationUnlocked then
 		return -- must buy Automation at the Card Opener first
 	end
-	local cost = Config.GetNodeCost(treeNode, level)
+	local cost = Config.ApplyPrice(Config.GetNodeCost(treeNode, level), session.Stats)
 	if treeNode.IsRebirth then
 		if data.RebirthTokens < cost then
 			return
@@ -468,6 +559,7 @@ local function onBuyUpgrade(player, nodeId)
 	end
 
 	session.Stats = Config.ComputeStats(data)
+	refreshPackUnlocks(player, session)
 	pushState(player, false)
 end
 
@@ -661,6 +753,53 @@ collectionViewRemote.OnServerEvent:Connect(function(player, open)
 	end
 end)
 
+-- Buy the Pack Loader 3000 (the upgrade that lets you equip card packs). Needs
+-- enough Rare cards owned (not consumed) plus a coin cost.
+unlockPackLoaderRemote.OnServerEvent:Connect(function(player)
+	local session = sessions[player]
+	if not session then
+		return
+	end
+	local data = session.Data
+	if data.PackLoaderUnlocked then
+		return
+	end
+	if tierCardCount(data, "Rare") < Config.PackLoader.RareCardsNeeded then
+		return
+	end
+	local cost = Config.ApplyPrice(Config.PackLoader.CoinCost, session.Stats)
+	if data.Coins < cost then
+		return
+	end
+	data.Coins -= cost
+	data.PackLoaderUnlocked = true
+	refreshPackUnlocks(player, session) -- Basic (and any already-met) appear now
+	tickerRemote:FireClient(player, "📦 Pack Loader 3000 online! Equip a card pack to power up.")
+	pushState(player, false)
+end)
+
+-- Equip one card pack (or "" / false to unequip). Only unlocked packs allowed.
+equipPackRemote.OnServerEvent:Connect(function(player, packId)
+	local session = sessions[player]
+	if not session then
+		return
+	end
+	local data = session.Data
+	if not data.PackLoaderUnlocked then
+		return
+	end
+	if packId == false or packId == "" or packId == nil then
+		data.EquippedPack = false
+	elseif type(packId) == "string" and Config.PackById[packId] and data.UnlockedPacks[packId] then
+		-- toggle off if re-equipping the same one
+		data.EquippedPack = if data.EquippedPack == packId then false else packId
+	else
+		return
+	end
+	session.Stats = Config.ComputeStats(data)
+	pushState(player, false)
+end)
+
 -- Player configures auto-rebirth: whether it's on, and the token threshold it
 -- waits for before firing. The threshold does NOT escalate — it fires every
 -- time you bank that many tokens' worth of coins.
@@ -687,6 +826,7 @@ local function doRebirth(player, session)
 		return 0
 	end
 	tokens += session.Stats.BonusTokens
+	tokens = math.floor(tokens * session.Stats.TokenMult) -- Rebirth pack boosts this
 
 	local keepIndex = if session.Stats.KeepLegendary
 		then Config.TierByName.Legendary.Index
@@ -721,6 +861,7 @@ rebirthRemote.OnServerEvent:Connect(function(player)
 		return
 	end
 	if doRebirth(player, session) > 0 then
+		refreshPackUnlocks(player, session)
 		pushState(player, true)
 	end
 end)
@@ -758,7 +899,7 @@ buyRollSpeedRemote.OnServerEvent:Connect(function(player)
 	if data.RollSpeedLevel >= session.Stats.MaxRollSpeedLevel then
 		return
 	end
-	local cost = Config.GetRollSpeedCost(data.RollSpeedLevel)
+	local cost = Config.ApplyPrice(Config.GetRollSpeedCost(data.RollSpeedLevel), session.Stats)
 	if data.Coins < cost then
 		return
 	end
@@ -791,7 +932,7 @@ local function onBuyBridge(player, which)
 	local built = data.Bridges[which] or 0
 	local bought = false
 	while built < conf.Parts do
-		local cost = Config.GetBridgeCost(which, built)
+		local cost = Config.ApplyPrice(Config.GetBridgeCost(which, built), session.Stats)
 		if data.Coins < cost then
 			break
 		end
@@ -852,7 +993,7 @@ local function onBuyShop(player, itemId)
 	if item.MaxLevel and level >= item.MaxLevel then
 		return
 	end
-	local cost = Config.GetShopCost(item, level)
+	local cost = Config.ApplyPrice(Config.GetShopCost(item, level), session.Stats)
 	if data.Coins < cost then
 		return
 	end
@@ -941,6 +1082,24 @@ local function runAutomation(player, session)
 		changed = true
 	end
 
+	-- Automation pack: auto-buy roll-speed levels whenever you can afford them
+	if stats.AutoBuySpeed then
+		local bought = false
+		while data.RollSpeedLevel < stats.MaxRollSpeedLevel do
+			local cost = Config.ApplyPrice(Config.GetRollSpeedCost(data.RollSpeedLevel), stats)
+			if data.Coins < cost then
+				break
+			end
+			data.Coins -= cost
+			data.RollSpeedLevel += 1
+			bought = true
+		end
+		if bought then
+			session.Stats = Config.ComputeStats(data)
+			changed = true
+		end
+	end
+
 	return changed
 end
 
@@ -955,6 +1114,8 @@ task.spawn(function()
 			local earned = computeRate(session.Data, session.Stats)
 			session.Data.Coins += earned
 			session.Data.TotalEarned += earned
+			-- auto-unlock any card packs whose requirements are now met
+			refreshPackUnlocks(player, session)
 			local includeCards = session.CardsDirty
 			session.CardsDirty = false
 			pushState(player, includeCards)

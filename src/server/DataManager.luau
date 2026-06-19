@@ -45,6 +45,9 @@ local DEFAULT_DATA = {
 	AutoRebirthTokens = 10, -- auto-rebirth once a rebirth would grant this many tokens
 	Bridges = {}, -- which -> parts built (gold/green/shop)
 	ShopUpgrades = {}, -- shop item id -> level
+	PackLoaderUnlocked = false, -- bought the Pack Loader 3000 (lets you equip packs)
+	UnlockedPacks = {}, -- packId -> true (auto-unlocks as you meet requirements)
+	EquippedPack = false, -- the one currently-equipped pack id, or false
 	LastSeen = 0,
 }
 

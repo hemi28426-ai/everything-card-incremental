@@ -139,6 +139,24 @@ local function buildRollTv(folder)
 	makePart({ Name = "TvFrame", Size = Vector3.new(1.2, 20, 32), CFrame = CFrame.new(tv[1] + 0.6, tv[2], tv[3]), Color = Color3.fromRGB(74, 64, 100), Parent = screen })
 end
 
+-- ===== Pack Loader 3000 ====================================================
+-- A kiosk next to the TV (south of it). Its WEST face holds a SurfaceGui the
+-- client builds: the unlock button, then your unlocked card packs to equip.
+
+local function buildPackLoader(folder)
+	local tv = Config.Layout.TV
+	local machine = makePart({
+		Name = "PackLoader",
+		Size = Vector3.new(1.5, 16, 16),
+		CFrame = CFrame.new(tv[1], 9, tv[3] - 34),
+		Color = Color3.fromRGB(26, 30, 44),
+		Parent = folder,
+	})
+	makePart({ Name = "PackFrame", Size = Vector3.new(1.2, 18, 18), CFrame = CFrame.new(tv[1] + 0.6, 9, tv[3] - 34), Color = Color3.fromRGB(70, 80, 110), Parent = machine })
+	-- a little sign cube on top
+	makePart({ Name = "PackTop", Size = Vector3.new(2, 2, 18), CFrame = CFrame.new(tv[1], 18, tv[3] - 34), Color = Color3.fromRGB(90, 130, 200), Parent = machine })
+end
+
 -- ===== rebirth altar (far end of the GOLD island) =========================
 
 local function buildAltar(folder)
@@ -364,6 +382,7 @@ function TreeBuilder.Build(onBuy, onBuyBridge, onBuyShop)
 	buildTree(Config.AutomationTree, folder, onBuy) -- green island
 
 	buildRollTv(folder)
+	buildPackLoader(folder)
 	buildAltar(folder)
 
 	buildBridge(folder, "gold", Vector3.new(0, 0, HUB_RADIUS), Vector3.new(0, 0, GOLD.Z - ISLAND_RADIUS), onBuyBridge)

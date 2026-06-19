@@ -157,6 +157,9 @@ function UI:Build()
 	task.spawn(function()
 		self:BuildRollTV()
 	end)
+	task.spawn(function()
+		self:BuildPackLoader()
+	end)
 
 	-- dev cheat menu (only for Hemi286)
 	if Players.LocalPlayer.UserId == 508290827 then
@@ -423,7 +426,7 @@ function UI:UpdateTV()
 		self.TVSpeedButton.Text = ("Roll Speed  Lv %d\nMAX"):format(level)
 		self.TVSpeedButton.BackgroundColor3 = COLORS.Disabled
 	else
-		local cost = state.RollSpeedCost or 0
+		local cost = Config.ApplyPrice(state.RollSpeedCost or 0, state.Stats)
 		self.TVSpeedButton.Text = ("Roll Speed  Lv %d/%d\n🪙 %s"):format(level, maxLevel, Format(cost))
 		self.TVSpeedButton.BackgroundColor3 = if state.Coins >= cost then Color3.fromRGB(150, 120, 220) else COLORS.Disabled
 	end
@@ -494,12 +497,197 @@ function UI:UpdateShop()
 				t.Prompt.Enabled = false
 			end
 		else
-			local cost = Config.GetShopCost(item, level)
+			local cost = Config.ApplyPrice(Config.GetShopCost(item, level), state.Stats)
 			local suffix = if item.MaxLevel and item.MaxLevel > 1 then (" • Lv %d/%d"):format(level, item.MaxLevel) else ""
 			t.Price.Text = ("🪙 %s%s"):format(Format(cost), suffix)
 			t.Price.TextColor3 = if state.Coins >= cost then Color3.fromRGB(150, 235, 150) else Color3.fromRGB(235, 160, 160)
 			if t.Prompt then
 				t.Prompt.Enabled = true
+			end
+		end
+	end
+end
+
+-- ===== Pack Loader 3000 ====================================================
+-- A per-player SurfaceGui on the kiosk part: unlock button until bought, then a
+-- tile per UNLOCKED card pack (tap to equip; only one at a time).
+
+function UI:BuildPackLoader()
+	local tree = workspace:WaitForChild("UpgradeTree", 30)
+	if not tree then
+		return
+	end
+	local machine = tree:WaitForChild("PackLoader", 20)
+	if not machine then
+		return
+	end
+
+	local gui = create("SurfaceGui", {
+		Name = "PackLoaderGui",
+		Face = Enum.NormalId.Left,
+		SizingMode = Enum.SurfaceGuiSizingMode.PixelsPerStud,
+		PixelsPerStud = 40,
+		Parent = machine,
+	})
+	create("Frame", { Size = UDim2.new(1, 0, 1, 0), BackgroundColor3 = Color3.fromRGB(18, 20, 32), Parent = gui })
+	create("TextLabel", {
+		BackgroundTransparency = 1,
+		Position = UDim2.new(0, 0, 0.01, 0),
+		Size = UDim2.new(1, 0, 0.08, 0),
+		Font = Enum.Font.GothamBlack,
+		TextScaled = true,
+		TextColor3 = Color3.fromRGB(150, 200, 255),
+		Text = "📦 PACK LOADER 3000",
+		Parent = gui,
+	})
+
+	self.PackUnlockHint = create("TextLabel", {
+		BackgroundTransparency = 1,
+		Position = UDim2.new(0.06, 0, 0.16, 0),
+		Size = UDim2.new(0.88, 0, 0.22, 0),
+		Font = Enum.Font.GothamBold,
+		TextSize = 22,
+		TextWrapped = true,
+		TextColor3 = Color3.fromRGB(210, 215, 230),
+		Text = "Equip Card Packs for big boosts. Unlock the loader to begin.",
+		Parent = gui,
+	})
+	local unlockBtn = create("TextButton", {
+		Position = UDim2.new(0.1, 0, 0.42, 0),
+		Size = UDim2.new(0.8, 0, 0.18, 0),
+		BackgroundColor3 = Color3.fromRGB(70, 90, 140),
+		Font = Enum.Font.GothamBold,
+		TextScaled = true,
+		TextColor3 = Color3.fromRGB(255, 255, 255),
+		Text = "Unlock",
+		Parent = gui,
+	})
+	addCorner(unlockBtn, UDim.new(0, 12))
+	self.PackUnlockBtn = unlockBtn
+	unlockBtn.Activated:Connect(function()
+		self.Callbacks.OnUnlockPackLoader()
+	end)
+
+	local list = create("Frame", {
+		BackgroundTransparency = 1,
+		Position = UDim2.new(0.04, 0, 0.11, 0),
+		Size = UDim2.new(0.92, 0, 0.87, 0),
+		Visible = false,
+		Parent = gui,
+	})
+	create("UIListLayout", { Padding = UDim.new(0, 8), SortOrder = Enum.SortOrder.LayoutOrder, Parent = list })
+	self.PackList = list
+	self.PackTiles = {}
+	for order, pack in Config.Packs do
+		local tile = create("TextButton", {
+			Size = UDim2.new(1, 0, 0, 122),
+			BackgroundColor3 = Color3.fromRGB(28, 30, 46),
+			Text = "",
+			AutoButtonColor = true,
+			LayoutOrder = order,
+			Visible = false,
+			Parent = list,
+		})
+		addCorner(tile, UDim.new(0, 12))
+		local stroke = create("UIStroke", { Color = pack.Color, Thickness = 3, Parent = tile })
+		local icon = create("TextLabel", {
+			BackgroundColor3 = Color3.fromRGB(14, 14, 24),
+			Position = UDim2.new(0, 10, 0.5, -50),
+			Size = UDim2.fromOffset(100, 100),
+			Font = Enum.Font.GothamBlack,
+			TextSize = 58,
+			TextColor3 = pack.Color,
+			Text = pack.Icon or "📦",
+			Parent = tile,
+		})
+		addCorner(icon, UDim.new(0, 10))
+		-- when you have a texture, set pack.Image in Config and it shows here
+		if pack.Image and pack.Image ~= "" then
+			create("ImageLabel", {
+				BackgroundTransparency = 1,
+				Image = pack.Image,
+				Position = UDim2.new(0, 10, 0.5, -50),
+				Size = UDim2.fromOffset(100, 100),
+				Parent = tile,
+			})
+		end
+		create("TextLabel", {
+			BackgroundTransparency = 1,
+			Position = UDim2.new(0, 122, 0, 6),
+			Size = UDim2.new(1, -132, 0, 30),
+			Font = Enum.Font.GothamBlack,
+			TextSize = 25,
+			TextXAlignment = Enum.TextXAlignment.Left,
+			TextColor3 = pack.Color,
+			Text = pack.Name,
+			Parent = tile,
+		})
+		create("TextLabel", {
+			BackgroundTransparency = 1,
+			Position = UDim2.new(0, 122, 0, 38),
+			Size = UDim2.new(1, -132, 0, 46),
+			Font = Enum.Font.GothamBold,
+			TextSize = 16,
+			TextWrapped = true,
+			TextXAlignment = Enum.TextXAlignment.Left,
+			TextYAlignment = Enum.TextYAlignment.Top,
+			TextColor3 = Color3.fromRGB(220, 222, 235),
+			Text = pack.Desc,
+			Parent = tile,
+		})
+		local status = create("TextLabel", {
+			BackgroundTransparency = 1,
+			Position = UDim2.new(0, 122, 1, -32),
+			Size = UDim2.new(1, -132, 0, 28),
+			Font = Enum.Font.GothamBlack,
+			TextSize = 20,
+			TextXAlignment = Enum.TextXAlignment.Left,
+			TextColor3 = Color3.fromRGB(150, 235, 150),
+			Text = "Tap to equip",
+			Parent = tile,
+		})
+		tile.Activated:Connect(function()
+			self.Callbacks.OnEquipPack(pack.Id)
+		end)
+		self.PackTiles[pack.Id] = { Tile = tile, Status = status, Stroke = stroke }
+	end
+
+	if self.State then
+		self:UpdatePackLoader()
+	end
+end
+
+function UI:UpdatePackLoader()
+	local state = self.State
+	if not state or not self.PackUnlockBtn then
+		return
+	end
+	if state.PackLoaderUnlocked ~= true then
+		self.PackUnlockBtn.Visible = true
+		self.PackUnlockHint.Visible = true
+		self.PackList.Visible = false
+		local need = Config.PackLoader.RareCardsNeeded
+		local have = math.min(state.RareCardCount or 0, need)
+		local cost = Config.ApplyPrice(Config.PackLoader.CoinCost, state.Stats)
+		local eligible = (state.RareCardCount or 0) >= need and state.Coins >= cost
+		self.PackUnlockBtn.Text = ("Unlock\n%d/%d Rares + 🪙%s"):format(have, need, Format(cost))
+		self.PackUnlockBtn.BackgroundColor3 = if eligible then Color3.fromRGB(80, 150, 90) else COLORS.Disabled
+		return
+	end
+	self.PackUnlockBtn.Visible = false
+	self.PackUnlockHint.Visible = false
+	self.PackList.Visible = true
+	for _, pack in Config.Packs do
+		local entry = self.PackTiles[pack.Id]
+		if entry then
+			local owned = state.UnlockedPacks and state.UnlockedPacks[pack.Id] == true
+			entry.Tile.Visible = owned
+			if owned then
+				local equipped = state.EquippedPack == pack.Id
+				entry.Status.Text = if equipped then "✓ EQUIPPED" else "Tap to equip"
+				entry.Status.TextColor3 = if equipped then Color3.fromRGB(255, 225, 90) else Color3.fromRGB(150, 235, 150)
+				entry.Stroke.Thickness = if equipped then 6 else 3
+				entry.Tile.BackgroundColor3 = if equipped then Color3.fromRGB(46, 48, 70) else Color3.fromRGB(28, 30, 46)
 			end
 		end
 	end
@@ -1540,7 +1728,7 @@ function UI:UpdatePads()
 				else ("🔒 " .. (reqNode and reqNode.Name or "locked"))
 			affordable, promptOn = false, false
 		else
-			local cost = Config.GetNodeCost(treeNode, level)
+			local cost = Config.ApplyPrice(Config.GetNodeCost(treeNode, level), state.Stats)
 			local prefix = if treeNode.MaxLevel == nil then ("Lv %d\n"):format(level) else ""
 			local icon = if treeNode.IsRebirth then "⭐" else "🪙"
 			local wallet = if treeNode.IsRebirth then state.RebirthTokens else state.Coins
@@ -1651,6 +1839,7 @@ function UI:Update(state)
 	self.TokenLabel.Text = ("⭐ Tokens: %s  •  Rebirths: %s"):format(Format(state.RebirthTokens), Format(state.Rebirths))
 
 	self:UpdateTV()
+	self:UpdatePackLoader()
 
 	if self.RebirthOverlay and self.RebirthOverlay.Visible then
 		self:RefreshRebirthModal()
