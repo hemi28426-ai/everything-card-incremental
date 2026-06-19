@@ -509,8 +509,9 @@ function UI:UpdateShop()
 end
 
 -- ===== Pack Loader 3000 ====================================================
--- A per-player SurfaceGui on the kiosk part: unlock button until bought, then a
--- tile per UNLOCKED card pack (tap to equip; only one at a time).
+-- A per-player SurfaceGui on the kiosk part: EQUIP only. Packs are unlocked out
+-- in the world (the pack buttons on each island); here you pick which ONE to
+-- equip. A tile shows for each pack you own.
 
 function UI:BuildPackLoader()
 	local tree = workspace:WaitForChild("UpgradeTree", 30)
@@ -543,30 +544,15 @@ function UI:BuildPackLoader()
 
 	self.PackUnlockHint = create("TextLabel", {
 		BackgroundTransparency = 1,
-		Position = UDim2.new(0.06, 0, 0.16, 0),
-		Size = UDim2.new(0.88, 0, 0.22, 0),
+		Position = UDim2.new(0.06, 0, 0.18, 0),
+		Size = UDim2.new(0.88, 0, 0.3, 0),
 		Font = Enum.Font.GothamBold,
 		TextSize = 22,
 		TextWrapped = true,
 		TextColor3 = Color3.fromRGB(210, 215, 230),
-		Text = "Equip Card Packs for big boosts. Unlock the loader to begin.",
+		Text = "Collect Card Packs from the glowing buttons on each island, then equip one here.",
 		Parent = gui,
 	})
-	local unlockBtn = create("TextButton", {
-		Position = UDim2.new(0.1, 0, 0.42, 0),
-		Size = UDim2.new(0.8, 0, 0.18, 0),
-		BackgroundColor3 = Color3.fromRGB(70, 90, 140),
-		Font = Enum.Font.GothamBold,
-		TextScaled = true,
-		TextColor3 = Color3.fromRGB(255, 255, 255),
-		Text = "Unlock",
-		Parent = gui,
-	})
-	addCorner(unlockBtn, UDim.new(0, 12))
-	self.PackUnlockBtn = unlockBtn
-	unlockBtn.Activated:Connect(function()
-		self.Callbacks.OnUnlockPackLoader()
-	end)
 
 	local list = create("Frame", {
 		BackgroundTransparency = 1,
@@ -659,24 +645,21 @@ end
 
 function UI:UpdatePackLoader()
 	local state = self.State
-	if not state or not self.PackUnlockBtn then
+	if not state or not self.PackList then
 		return
 	end
-	if state.PackLoaderUnlocked ~= true then
-		self.PackUnlockBtn.Visible = true
-		self.PackUnlockHint.Visible = true
-		self.PackList.Visible = false
-		local need = Config.PackLoader.RareCardsNeeded
-		local have = math.min(state.RareCardCount or 0, need)
-		local cost = Config.ApplyPrice(Config.PackLoader.CoinCost, state.Stats)
-		local eligible = (state.RareCardCount or 0) >= need and state.Coins >= cost
-		self.PackUnlockBtn.Text = ("Unlock\n%d/%d Rares + 🪙%s"):format(have, need, Format(cost))
-		self.PackUnlockBtn.BackgroundColor3 = if eligible then Color3.fromRGB(80, 150, 90) else COLORS.Disabled
-		return
+	-- count owned packs; show the hint until you own at least one
+	local anyOwned = false
+	if state.UnlockedPacks then
+		for _, pack in Config.Packs do
+			if state.UnlockedPacks[pack.Id] then
+				anyOwned = true
+				break
+			end
+		end
 	end
-	self.PackUnlockBtn.Visible = false
-	self.PackUnlockHint.Visible = false
-	self.PackList.Visible = true
+	self.PackUnlockHint.Visible = not anyOwned
+	self.PackList.Visible = anyOwned
 	for _, pack in Config.Packs do
 		local entry = self.PackTiles[pack.Id]
 		if entry then
@@ -1417,6 +1400,93 @@ function UI:BuildPadSurfaces()
 		gui.Enabled = false
 	end
 
+	-- card-pack unlock pads (tagged PackId; standalone, not part of the trees)
+	self.PackPads = {}
+	for _, pad in tree:GetChildren() do
+		local packId = pad:GetAttribute("PackId")
+		local pack = packId and Config.PackById[packId]
+		if not pack then
+			continue
+		end
+		local gui = create("SurfaceGui", {
+			Face = Enum.NormalId.Top,
+			SizingMode = Enum.SurfaceGuiSizingMode.PixelsPerStud,
+			PixelsPerStud = 22,
+			MaxDistance = 85,
+			Parent = pad,
+		})
+		local bg = create("Frame", {
+			BackgroundColor3 = Color3.fromRGB(16, 14, 24),
+			BackgroundTransparency = 0.05,
+			Size = UDim2.new(1, 0, 1, 0),
+			Parent = gui,
+		})
+		addCorner(bg, UDim.new(0, 14))
+		create("UIStroke", { Color = pack.Color, Thickness = 6, Parent = bg })
+		create("TextLabel", {
+			BackgroundTransparency = 1,
+			Position = UDim2.new(0, 0, 0.02, 0),
+			Size = UDim2.new(1, 0, 0.32, 0),
+			Font = Enum.Font.GothamBlack,
+			TextSize = 70,
+			Text = pack.Icon or "📦",
+			TextColor3 = pack.Color,
+			Parent = bg,
+		})
+		create("TextLabel", {
+			BackgroundTransparency = 1,
+			Position = UDim2.new(0, 8, 0.34, 0),
+			Size = UDim2.new(1, -16, 0.15, 0),
+			Font = Enum.Font.GothamBlack,
+			TextSize = 30,
+			TextWrapped = true,
+			TextColor3 = pack.Color,
+			Text = pack.Name,
+			Parent = bg,
+		})
+		create("TextLabel", {
+			BackgroundTransparency = 1,
+			Position = UDim2.new(0, 10, 0.5, 0),
+			Size = UDim2.new(1, -20, 0.22, 0),
+			Font = Enum.Font.GothamBold,
+			TextSize = 17,
+			TextWrapped = true,
+			TextColor3 = Color3.fromRGB(220, 222, 235),
+			Text = pack.Desc,
+			Parent = bg,
+		})
+		local costLabel = create("TextLabel", {
+			BackgroundTransparency = 1,
+			Position = UDim2.new(0, 8, 0.73, 0),
+			Size = UDim2.new(1, -16, 0.25, 0),
+			Font = Enum.Font.GothamBlack,
+			TextSize = 22,
+			TextWrapped = true,
+			TextColor3 = COLORS.Text,
+			Text = "",
+			Parent = bg,
+		})
+		self.PackPads[packId] = {
+			Pad = pad,
+			Trim = pad:FindFirstChild("PackTrim"),
+			Prompt = pad:FindFirstChildWhichIsA("ProximityPrompt"),
+			Gui = gui,
+			CostLabel = costLabel,
+			Area = pack.Area,
+			Pack = pack,
+		}
+		pad.LocalTransparencyModifier = 1
+		local trim = pad:FindFirstChild("PackTrim")
+		if trim then
+			trim.LocalTransparencyModifier = 1
+		end
+		local prompt = pad:FindFirstChildWhichIsA("ProximityPrompt")
+		if prompt then
+			prompt.Enabled = false
+		end
+		gui.Enabled = false
+	end
+
 	-- collect bridge segments per-player so each only sees/walks the parts they've
 	-- built. Each starts hidden + non-collidable; UpdateBridges reveals them.
 	self.BridgeSegs = { gold = {}, green = {}, shop = {} }
@@ -1436,7 +1506,7 @@ function UI:BuildPadSurfaces()
 			-- pads / trims / paths are revealed per-pad by setPadVisible, so only
 			-- scenery (platforms, shop, altar) goes in the area-reveal group
 			local n = part.Name
-			local isPadPart = n:match("^Pad_") or n:match("^Path_") or n == "Trim"
+			local isPadPart = n:match("^Pad_") or n:match("^Path_") or n == "Trim" or n:match("^PackPad_") or n == "PackTrim"
 			if area and self.AreaParts[area] and not isPadPart then
 				table.insert(self.AreaParts[area], part)
 				part.LocalTransparencyModifier = 1
@@ -1749,6 +1819,46 @@ function UI:UpdatePads()
 		if entry.Prompt and entry.LastPrompt ~= promptOn then
 			entry.LastPrompt = promptOn
 			entry.Prompt.Enabled = promptOn
+		end
+	end
+
+	-- card-pack unlock pads (own/req/affordability, gated by their island bridge)
+	if self.PackPads then
+		for packId, entry in self.PackPads do
+			local visible = areaReachable(state, entry.Area)
+			setPadVisible(entry, visible)
+			if visible then
+				local pack = entry.Pack
+				local owned = state.UnlockedPacks and state.UnlockedPacks[packId] == true
+				local text, color, promptOn
+				if owned then
+					text, color, promptOn = "✓ UNLOCKED", Color3.fromRGB(130, 240, 150), false
+				else
+					local u = pack.Unlock
+					local extra = ""
+					if u.RareCards then
+						extra = ("\nRares %d/%d"):format(math.min(state.RareCardCount or 0, u.RareCards), u.RareCards)
+					elseif u.DivineCards then
+						extra = ("\nDivine %d/%d"):format(math.min(state.DivineCardCount or 0, u.DivineCards), u.DivineCards)
+					end
+					local unlockable = state.PackUnlockable and state.PackUnlockable[packId] == true
+					text = pack.ReqText .. extra
+					color = if unlockable then Color3.fromRGB(130, 240, 150) else Color3.fromRGB(240, 140, 150)
+					promptOn = unlockable
+				end
+				if entry.LastText ~= text then
+					entry.LastText = text
+					entry.CostLabel.Text = text
+				end
+				if entry.LastColor ~= color then
+					entry.LastColor = color
+					entry.CostLabel.TextColor3 = color
+				end
+				if entry.Prompt and entry.LastPrompt ~= promptOn then
+					entry.LastPrompt = promptOn
+					entry.Prompt.Enabled = promptOn
+				end
+			end
 		end
 	end
 

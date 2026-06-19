@@ -26,7 +26,6 @@ local buyRollSpeedRemote = remotes:WaitForChild("BuyRollSpeed")
 local rebirthRemote = remotes:WaitForChild("Rebirth")
 local setAutoRebirthRemote = remotes:WaitForChild("SetAutoRebirth")
 local collectionViewRemote = remotes:WaitForChild("CollectionView")
-local unlockPackLoaderRemote = remotes:WaitForChild("UnlockPackLoader")
 local equipPackRemote = remotes:WaitForChild("EquipPack")
 local stateRemote = remotes:WaitForChild("StateChanged")
 local rollResultRemote = remotes:WaitForChild("RollResult")
@@ -91,9 +90,6 @@ ui = UI.new({
 	end,
 	OnCollectionView = function(open)
 		collectionViewRemote:FireServer(open)
-	end,
-	OnUnlockPackLoader = function()
-		unlockPackLoaderRemote:FireServer()
 	end,
 	OnEquipPack = function(packId)
 		equipPackRemote:FireServer(packId)

@@ -122,6 +122,42 @@ local function buildTree(tree, folder, onBuy)
 	end
 end
 
+-- A standalone, slightly bigger pad that unlocks a Card Pack when bought. Tagged
+-- with PackId (not NodeId) so the client renders + gates it separately. Pads on
+-- an island carry that Area so they hide until the bridge is built.
+local function buildPackPad(pack, folder, onBuyPack)
+	local x, z = pack.Pos[1], pack.Pos[2]
+	local area = if pack.Area ~= "hub" then pack.Area else nil
+	local pad = makePart({
+		Name = "PackPad_" .. pack.Id,
+		Size = Vector3.new(10, 1, 10),
+		CFrame = CFrame.new(x, PAD_Y, z),
+		Color = Color3.fromRGB(18, 16, 26),
+		Area = area,
+		Parent = folder,
+	})
+	pad:SetAttribute("PackId", pack.Id)
+	makePart({
+		Name = "PackTrim",
+		Size = Vector3.new(11, 0.5, 11),
+		CFrame = CFrame.new(x, 0.25, z),
+		Color = pack.Color,
+		Area = area,
+		Parent = pad,
+	})
+	local prompt = Instance.new("ProximityPrompt")
+	prompt.Name = "PackPrompt"
+	prompt.ActionText = "Unlock"
+	prompt.ObjectText = pack.Name
+	prompt.HoldDuration = 0.4
+	prompt.MaxActivationDistance = 10
+	prompt.RequiresLineOfSight = false
+	prompt.Parent = pad
+	prompt.Triggered:Connect(function(player)
+		onBuyPack(player, pack.Id)
+	end)
+end
+
 -- ===== the Card TV =========================================================
 -- On the EAST edge of the hub (the side with no bridge). Its WEST face (−X)
 -- holds the screen, facing the hub centre where you walk up. The clickable
@@ -358,7 +394,7 @@ end
 
 -- ===== build everything ====================================================
 
-function TreeBuilder.Build(onBuy, onBuyBridge, onBuyShop)
+function TreeBuilder.Build(onBuy, onBuyBridge, onBuyShop, onBuyPack)
 	for _, legacyName in { "Baseplate", "SpawnPlaza", "MainIsland", "GoldenIsland", "GreenIsland", "RebirthBridge", "UpgradeTree" } do
 		local legacy = workspace:FindFirstChild(legacyName)
 		if legacy then
@@ -380,6 +416,11 @@ function TreeBuilder.Build(onBuy, onBuyBridge, onBuyShop)
 	buildTree(Config.Tree, folder, onBuy) -- hub coin trees (Greed + Luck)
 	buildTree(Config.RebirthTree, folder, onBuy) -- gold island
 	buildTree(Config.AutomationTree, folder, onBuy) -- green island
+
+	-- the four Card Pack unlock buttons, one per island
+	for _, pack in Config.Packs do
+		buildPackPad(pack, folder, onBuyPack)
+	end
 
 	buildRollTv(folder)
 	buildPackLoader(folder)

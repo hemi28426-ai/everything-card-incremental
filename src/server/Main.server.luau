@@ -42,7 +42,6 @@ local buyRollSpeedRemote = makeRemote("BuyRollSpeed")
 local rebirthRemote = makeRemote("Rebirth")
 local setAutoRebirthRemote = makeRemote("SetAutoRebirth")
 local collectionViewRemote = makeRemote("CollectionView")
-local unlockPackLoaderRemote = makeRemote("UnlockPackLoader")
 local equipPackRemote = makeRemote("EquipPack")
 local stateRemote = makeRemote("StateChanged")
 local rollResultRemote = makeRemote("RollResult")
@@ -115,17 +114,6 @@ local function tierCardCount(data, tierName)
 	return n
 end
 
-local function ownsTierOrHigher(data, tierName)
-	local needed = Config.TierByName[tierName].Index
-	for _, card in data.Cards do
-		local tier = Config.TierByName[card.Tier]
-		if tier and tier.Index >= needed then
-			return true
-		end
-	end
-	return false
-end
-
 local function allAutomationOwned(data)
 	for _, treeNode in Config.AutomationTree do
 		if (data.RebirthUpgrades[treeNode.Id] or 0) < 1 then
@@ -151,40 +139,53 @@ local function allUpgradesOwned(data)
 	return true
 end
 
--- does the player meet a pack's unlock requirement right now?
-local function packRequirementMet(data, pack)
-	local req = pack.Req
-	if req.Tokens and data.RebirthTokens < req.Tokens then
+-- does the player meet a pack button's unlock cost right now?
+local function packCanUnlock(data, pack, stats)
+	local u = pack.Unlock
+	if u.RareCards and tierCardCount(data, "Rare") < u.RareCards then
 		return false
 	end
-	if req.AllAutomation and not allAutomationOwned(data) then
+	if u.DivineCards and tierCardCount(data, "Divine") < u.DivineCards then
 		return false
 	end
-	if req.AllUpgrades and not allUpgradesOwned(data) then
+	if u.Coins and data.Coins < Config.ApplyPrice(u.Coins, stats) then
 		return false
 	end
-	if req.DivineCard and not ownsTierOrHigher(data, "Divine") then
+	if u.Tokens and data.RebirthTokens < Config.ApplyPrice(u.Tokens, stats) then
+		return false
+	end
+	if u.AllAutomation and not allAutomationOwned(data) then
+		return false
+	end
+	if u.AllUpgrades and not allUpgradesOwned(data) then
 		return false
 	end
 	return true
 end
 
--- Auto-unlock any packs whose requirements are now met (only once the Pack
--- Loader itself is bought). Returns true if anything newly unlocked.
-local function refreshPackUnlocks(player, session)
+-- remove `count` copies of a tier from the collection (used to "spend" cards on
+-- a pack button). Unequips any card that hits zero copies.
+local function consumeTierCards(session, tierName, count)
 	local data = session.Data
-	if not data.PackLoaderUnlocked then
-		return false
-	end
-	local changed = false
-	for _, pack in Config.Packs do
-		if not data.UnlockedPacks[pack.Id] and packRequirementMet(data, pack) then
-			data.UnlockedPacks[pack.Id] = true
-			changed = true
-			tickerRemote:FireClient(player, ("📦 Card Pack unlocked: %s! Equip it at the Pack Loader 3000."):format(pack.Name))
+	local remaining = count
+	for key, card in data.Cards do
+		if remaining <= 0 then
+			break
+		end
+		if card.Tier == tierName then
+			local take = math.min(card.Count, remaining)
+			card.Count -= take
+			remaining -= take
+			if card.Count <= 0 then
+				data.Cards[key] = nil
+				local i = table.find(data.Equipped, key)
+				if i then
+					table.remove(data.Equipped, i)
+				end
+			end
 		end
 	end
-	return changed
+	session.UniqueCount = nil -- force a recount next time it's needed
 end
 
 local function buildState(session, includeCards)
@@ -216,6 +217,14 @@ local function buildState(session, includeCards)
 		UnlockedPacks = data.UnlockedPacks,
 		EquippedPack = data.EquippedPack,
 		RareCardCount = tierCardCount(data, "Rare"),
+		DivineCardCount = tierCardCount(data, "Divine"),
+		PackUnlockable = (function()
+			local m = {}
+			for _, pack in Config.Packs do
+				m[pack.Id] = packCanUnlock(data, pack, session.Stats)
+			end
+			return m
+		end)(),
 		HasFastAuto = session.HasFastAuto == true,
 		AutoInterval = if session.HasFastAuto then Config.Roll.AutoIntervalFast else Config.Roll.AutoInterval,
 		Stats = session.Stats,
@@ -559,7 +568,6 @@ local function onBuyUpgrade(player, nodeId)
 	end
 
 	session.Stats = Config.ComputeStats(data)
-	refreshPackUnlocks(player, session)
 	pushState(player, false)
 end
 
@@ -753,32 +761,53 @@ collectionViewRemote.OnServerEvent:Connect(function(player, open)
 	end
 end)
 
--- Buy the Pack Loader 3000 (the upgrade that lets you equip card packs). Needs
--- enough Rare cards owned (not consumed) plus a coin cost.
-unlockPackLoaderRemote.OnServerEvent:Connect(function(player)
+-- Buy a Card Pack's unlock button (out in the world, via its prompt). Spends the
+-- required cards / coins / tokens, marks the pack owned forever, and (for the
+-- Basic button) turns the Pack Loader on. Auto-equips if you have none equipped.
+local function onBuyPack(player, packId)
 	local session = sessions[player]
-	if not session then
+	local pack = type(packId) == "string" and Config.PackById[packId]
+	if not session or not pack then
 		return
 	end
 	local data = session.Data
-	if data.PackLoaderUnlocked then
+	if data.UnlockedPacks[pack.Id] then
+		return -- already owned
+	end
+	if not packCanUnlock(data, pack, session.Stats) then
 		return
 	end
-	if tierCardCount(data, "Rare") < Config.PackLoader.RareCardsNeeded then
-		return
-	end
-	local cost = Config.ApplyPrice(Config.PackLoader.CoinCost, session.Stats)
-	if data.Coins < cost then
-		return
-	end
-	data.Coins -= cost
-	data.PackLoaderUnlocked = true
-	refreshPackUnlocks(player, session) -- Basic (and any already-met) appear now
-	tickerRemote:FireClient(player, "📦 Pack Loader 3000 online! Equip a card pack to power up.")
-	pushState(player, false)
-end)
 
--- Equip one card pack (or "" / false to unequip). Only unlocked packs allowed.
+	-- pay the cost
+	local u = pack.Unlock
+	if u.Coins then
+		data.Coins -= Config.ApplyPrice(u.Coins, session.Stats)
+	end
+	if u.Tokens then
+		data.RebirthTokens -= Config.ApplyPrice(u.Tokens, session.Stats)
+	end
+	if u.RareCards then
+		consumeTierCards(session, "Rare", u.RareCards)
+	end
+	if u.DivineCards then
+		consumeTierCards(session, "Divine", u.DivineCards)
+	end
+
+	data.UnlockedPacks[pack.Id] = true
+	if u.GrantsLoader then
+		data.PackLoaderUnlocked = true
+	end
+	if data.EquippedPack == false or data.EquippedPack == nil then
+		data.EquippedPack = pack.Id -- auto-equip your first / when none equipped
+	end
+
+	session.Stats = Config.ComputeStats(data)
+	session.CardsDirty = true -- spending cards changed the collection
+	announce(("📦 %s unlocked the %s!"):format(player.Name, pack.Name))
+	pushState(player, false)
+end
+
+-- Equip one card pack (or "" / false to unequip). Only owned packs allowed.
 equipPackRemote.OnServerEvent:Connect(function(player, packId)
 	local session = sessions[player]
 	if not session then
@@ -861,7 +890,6 @@ rebirthRemote.OnServerEvent:Connect(function(player)
 		return
 	end
 	if doRebirth(player, session) > 0 then
-		refreshPackUnlocks(player, session)
 		pushState(player, true)
 	end
 end)
@@ -1114,8 +1142,6 @@ task.spawn(function()
 			local earned = computeRate(session.Data, session.Stats)
 			session.Data.Coins += earned
 			session.Data.TotalEarned += earned
-			-- auto-unlock any card packs whose requirements are now met
-			refreshPackUnlocks(player, session)
 			local includeCards = session.CardsDirty
 			session.CardsDirty = false
 			pushState(player, includeCards)
@@ -1166,7 +1192,7 @@ end)
 
 -- ===== world ===============================================================
 
-TreeBuilder.Build(onBuyUpgrade, onBuyBridge, onBuyShop)
+TreeBuilder.Build(onBuyUpgrade, onBuyBridge, onBuyShop, onBuyPack)
 Leaderboard.Start()
 
 -- the card pool scans fastest when someone bought Fresh Scan upgrades

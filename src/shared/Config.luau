@@ -414,25 +414,26 @@ end
 Config.LuckyBlock = { MinTier = "Mythic", MaxTier = "Divine", ValueMult = 1.6 }
 
 -- ===== Card Packs ==========================================================
--- Equippable boosts, one at a time, via the "Pack Loader 3000". You first buy
--- the loader (needs Rare cards), then each pack AUTO-UNLOCKS the moment you meet
--- its requirement and appears in the loader. Requirements are things you OWN/HAVE
--- (not consumed). Art (Image) is filled in later; for now each shows an icon.
-Config.PackLoader = {
-	RareCardsNeeded = 5, -- Rare-tier cards you must own to unlock the loader
-	CoinCost = 250000, -- plus this many coins
-}
-
+-- Each pack is UNLOCKED by buying a dedicated upgrade button out in the world
+-- (it spends cards / tokens). Once bought it's yours forever; you then EQUIP one
+-- at a time at the Pack Loader 3000. Buttons:
+--   * Basic     — on the HUB (also switches the Pack Loader on). Spend 5 Rares.
+--   * Rebirth   — on the GOLD island. Costs 1,000 tokens.
+--   * Automation— on the GREEN island. Needs every Automation upgrade.
+--   * Ultimate  — in the SHOP. 1,000 tokens + a Divine card + every upgrade.
+-- Art (Image) is filled in later; for now each shows an icon.
 Config.Packs = {
 	{
 		Id = "basic",
 		Name = "Basic Pack",
 		Icon = "🃏",
-		Color = Color3.fromRGB(120, 200, 255),
+		Color = Color3.fromRGB(150, 120, 255),
 		Image = "", -- set to "rbxassetid://..." when you have the texture
 		Desc = "↑ Legendary odds + 5 free Roll-Speed levels",
-		ReqText = "Unlocks with the Pack Loader",
-		Req = {}, -- unlocks as soon as the loader is bought
+		Area = "hub",
+		Pos = { 64, -22 },
+		ReqText = "Spend 5 Rare cards + 250K coins",
+		Unlock = { RareCards = 5, Coins = 250000, GrantsLoader = true },
 	},
 	{
 		Id = "rebirth",
@@ -441,8 +442,10 @@ Config.Packs = {
 		Color = Color3.fromRGB(255, 215, 80),
 		Image = "",
 		Desc = "+50% tokens & more Legendary+ — but rolls are 2x slower",
-		ReqText = "Have 1,000 Rebirth Tokens",
-		Req = { Tokens = 1000 },
+		Area = "gold",
+		Pos = { 24, 160 },
+		ReqText = "Costs 1,000 Rebirth Tokens",
+		Unlock = { Tokens = 1000 },
 	},
 	{
 		Id = "automation",
@@ -451,8 +454,10 @@ Config.Packs = {
 		Color = Color3.fromRGB(120, 220, 150),
 		Image = "",
 		Desc = "Automation runs much faster & auto-buys Roll Speed",
+		Area = "green",
+		Pos = { -230, 70 },
 		ReqText = "Own every Automation upgrade",
-		Req = { AllAutomation = true },
+		Unlock = { AllAutomation = true },
 	},
 	{
 		Id = "ultimate",
@@ -461,8 +466,10 @@ Config.Packs = {
 		Color = Color3.fromRGB(255, 120, 200),
 		Image = "",
 		Desc = "+20 Roll-Speed levels, Mythic+ boost, ALL prices halved",
-		ReqText = "1,000 Tokens + every upgrade + a Divine card",
-		Req = { Tokens = 1000, AllUpgrades = true, DivineCard = true },
+		Area = "shop",
+		Pos = { 0, -160 },
+		ReqText = "1,000 Tokens + a Divine card + every upgrade",
+		Unlock = { Tokens = 1000, AllUpgrades = true, DivineCards = 1 },
 	},
 }
 Config.PackById = {}
