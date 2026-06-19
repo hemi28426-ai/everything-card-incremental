@@ -142,10 +142,12 @@ end
 -- ===== rebirth altar (far end of the GOLD island) =========================
 
 local function buildAltar(folder)
+	-- sits in the southern gap of the radial rebirth tree, right where the bridge
+	-- arrives, so it greets you before you walk up to the Core at the centre
 	local altar = makePart({
 		Name = "RebirthAltar",
 		Size = Vector3.new(14, 1.4, 14),
-		CFrame = CFrame.new(0, 0.7, GOLD.Z + 62),
+		CFrame = CFrame.new(0, 0.7, GOLD.Z - 74),
 		Color = Color3.fromRGB(214, 170, 40),
 		Area = "gold",
 		Parent = folder,

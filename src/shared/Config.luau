@@ -195,6 +195,52 @@ local function layoutTree(nodes, rootId, origin, grow, side, zSpace, xSpace)
 	end
 end
 
+-- A RADIAL tree layout: the root sits at the island centre and its branches
+-- radiate outward (each subtree gets an angular slice sized by its leaf count,
+-- and forks fan within that slice). This is what makes a "one root → five
+-- branches" tree read as an organic SPIDER instead of parallel columns. The
+-- angular range leaves a gap (toward the bridge) for the altar/entrance.
+local function radialTree(nodes, rootId, centre, startDeg, rangeDeg, step)
+	local byId, children = {}, {}
+	for _, n in nodes do
+		byId[n.Id] = n
+		if n.Requires then
+			children[n.Requires] = children[n.Requires] or {}
+			table.insert(children[n.Requires], n.Id)
+		end
+	end
+	local leaves = {}
+	local function countLeaves(id)
+		local kids = children[id]
+		if not kids then
+			leaves[id] = 1
+			return 1
+		end
+		local sum = 0
+		for _, k in kids do
+			sum += countLeaves(k)
+		end
+		leaves[id] = sum
+		return sum
+	end
+	countLeaves(rootId)
+	local function place(id, a0, a1, depth)
+		local ang = math.rad((a0 + a1) / 2)
+		local r = depth * step
+		byId[id].Pos = { centre[1] + math.cos(ang) * r, centre[2] + math.sin(ang) * r }
+		local kids = children[id]
+		if kids then
+			local cur = a0
+			for _, k in kids do
+				local seg = (a1 - a0) * leaves[k] / leaves[id]
+				place(k, cur, cur + seg, depth + 1)
+				cur += seg
+			end
+		end
+	end
+	place(rootId, startDeg, startDeg + rangeDeg, 0)
+end
+
 -- ===== HUB coin tree (Greed + Luck) ========================================
 -- One branching tree on the hub. Bought with COINS (data.Upgrades), WIPED on
 -- rebirth. A 3-node trunk forks into Luck (left) and Greed (right), each a
@@ -259,44 +305,47 @@ local function rnode(def)
 	def.IsRebirth = true
 	def.Branch = def.Branch or "Rebirth"
 	def.Area = "gold"
-	def.TextRot = 180
+	def.TextRot = 0
 	table.insert(R, def)
 end
 
--- root (the one repeatable node; cost rockets 20x/level so it isn't spammed)
+-- root (the one repeatable node; cost rockets 20x/level so it isn't spammed).
+-- Sits at the island CENTRE; the five branches radiate out and fork.
 rnode({ Id = "core", Name = "Rebirth Core", Desc = "x2 ALL coin earnings, forever (cost 20x each level)", Icon = "♻️", Cost = 1, CostMult = 20, MaxLevel = nil })
 
--- Wealth branch (+ a short offshoot that ends)
+-- Wealth branch (forks at Dynasty: Fortune 500 → Trust Fund, plus Dream Profits)
 rnode({ Id = "rw1", Name = "Old Money", Desc = "x2 ALL coin earnings", Icon = "💰", Cost = 3, Requires = "core" })
 rnode({ Id = "rw2", Name = "Dynasty", Desc = "+200% dupe & sell value", Icon = "💎", Cost = 6, Requires = "rw1" })
 rnode({ Id = "rw3", Name = "Fortune 500", Desc = "x3 ALL coin earnings", Icon = "📈", Cost = 14, Requires = "rw2" })
 rnode({ Id = "rw4", Name = "Trust Fund", Desc = "+50K starting coins after rebirth", Icon = "🏦", Cost = 18, Requires = "rw3" })
-rnode({ Id = "rw5", Name = "Dream Profits", Desc = "Offline earnings: full rate, 24h cap", Icon = "💤", Cost = 20, Requires = "rw3" })
+rnode({ Id = "rw5", Name = "Dream Profits", Desc = "Offline earnings: full rate, 24h cap", Icon = "💤", Cost = 20, Requires = "rw2" })
 
--- Luck branch
+-- Luck branch (forks at Eternal Luck)
 rnode({ Id = "rl1", Name = "Eternal Luck", Desc = "+15% rare-tier chance", Icon = "🍀", Branch = "RLuck", Cost = 4, Requires = "core" })
 rnode({ Id = "rl2", Name = "God Magnet", Desc = "x3 legend chance", Icon = "🧲", Branch = "RLuck", Cost = 7, Requires = "rl1" })
 rnode({ Id = "rl3", Name = "Cosmic Favor", Desc = "+15% rare-tier chance", Icon = "🔮", Branch = "RLuck", Cost = 12, Requires = "rl2" })
-rnode({ Id = "rl4", Name = "Pantheon", Desc = "x3 legend chance AGAIN", Icon = "⭐", Branch = "RLuck", Cost = 20, Requires = "rl3" })
+rnode({ Id = "rl4", Name = "Pantheon", Desc = "x3 legend chance AGAIN", Icon = "⭐", Branch = "RLuck", Cost = 20, Requires = "rl1" })
 
--- Speed branch — the rebirth speed nodes raise the Roll-Speed cap
+-- Speed branch (forks at Overclock) — the speed nodes raise the Roll-Speed cap
 rnode({ Id = "rs1", Name = "Time Lord", Desc = "Manual roll cooldown x0.6", Icon = "⏱️", Branch = "RSpeed", Cost = 4, Requires = "core" })
 rnode({ Id = "rs2", Name = "Overclock", Desc = "+2 max Roll-Speed levels", Icon = "⚡", Branch = "RSpeed", Cost = 8, Requires = "rs1" })
 rnode({ Id = "rs3", Name = "Scanner Overdrive", Desc = "Fresh accounts found 2x faster", Icon = "📡", Branch = "RSpeed", Cost = 6, Requires = "rs2" })
-rnode({ Id = "rs4", Name = "Light Speed", Desc = "+2 max Roll-Speed levels", Icon = "🚀", Branch = "RSpeed", Cost = 14, Requires = "rs3" })
+rnode({ Id = "rs4", Name = "Light Speed", Desc = "+2 max Roll-Speed levels", Icon = "🚀", Branch = "RSpeed", Cost = 14, Requires = "rs2" })
 
--- Capacity branch
+-- Capacity branch (forks at Deep Pockets)
 rnode({ Id = "rc1", Name = "Deep Pockets", Desc = "+1 equip slot", Icon = "💼", Branch = "RCap", Cost = 5, Requires = "core" })
 rnode({ Id = "rc2", Name = "Bottomless Bag", Desc = "+40 backpack capacity", Icon = "🎒", Branch = "RCap", Cost = 6, Requires = "rc1" })
-rnode({ Id = "rc3", Name = "Hoarder", Desc = "+1 equip slot", Icon = "📦", Branch = "RCap", Cost = 12, Requires = "rc2" })
-rnode({ Id = "rc4", Name = "Vault Lord", Desc = "+2 equip slots", Icon = "🗄️", Branch = "RCap", Cost = 22, Requires = "rc3" })
+rnode({ Id = "rc3", Name = "Hoarder", Desc = "+1 equip slot", Icon = "📦", Branch = "RCap", Cost = 12, Requires = "rc1" })
+rnode({ Id = "rc4", Name = "Vault Lord", Desc = "+2 equip slots", Icon = "🗄️", Branch = "RCap", Cost = 22, Requires = "rc2" })
 
--- Meta branch — tokens & keeping cards through rebirth
+-- Meta branch (forks at Token Tithe)
 rnode({ Id = "rm1", Name = "Token Tithe", Desc = "+2 tokens from every rebirth", Icon = "🪙", Branch = "RMeta", Cost = 6, Requires = "core" })
 rnode({ Id = "rm2", Name = "Legendary Keeper", Desc = "Legendary cards survive rebirth", Icon = "🛡️", Branch = "RMeta", Cost = 10, Requires = "rm1" })
-rnode({ Id = "rm3", Name = "Token Hoarder", Desc = "+3 tokens from every rebirth", Icon = "⭐", Branch = "RMeta", Cost = 18, Requires = "rm2" })
+rnode({ Id = "rm3", Name = "Token Hoarder", Desc = "+3 tokens from every rebirth", Icon = "⭐", Branch = "RMeta", Cost = 18, Requires = "rm1" })
 
-layoutTree(R, "core", { Config.Layout.Gold[1], Config.Layout.Gold[2] - 72 }, { 0, 1 }, { 1, 0 }, 15, 15)
+-- radiate from the island centre over 300°, leaving the south (toward the
+-- bridge) open for the altar
+radialTree(R, "core", Config.Layout.Gold, -60, 300, 18)
 Config.RebirthTree = R
 
 -- ===== AUTOMATION tree (green island, tokens) ==============================
@@ -307,7 +356,7 @@ local function anode(def)
 	def.IsRebirth = true
 	def.Branch = "Automation"
 	def.Area = "green"
-	def.TextRot = 90
+	def.TextRot = 0
 	def.IsAutomation = def.Id ~= "autocore"
 	table.insert(A, def)
 end
@@ -321,7 +370,9 @@ anode({ Id = "overclock2", Name = "Overclock II", Desc = "Auto-roll 30% faster a
 anode({ Id = "overclock3", Name = "Overclock III", Desc = "Auto-roll 40% faster again", Icon = "⚡", Cost = 16, Requires = "overclock2" })
 anode({ Id = "autorebirth", Name = "Auto Rebirth", Desc = "Rebirths automatically when worth it", Icon = "🔁", Cost = 25, Requires = "autocore" })
 
-layoutTree(A, "autocore", { Config.Layout.Green[1] + 72, Config.Layout.Green[2] }, { -1, 0 }, { 0, 1 }, 15, 16)
+-- radiate from the green island centre over 300°, leaving the east (toward the
+-- bridge) open
+radialTree(A, "autocore", Config.Layout.Green, 120, 300, 20)
 Config.AutomationTree = A
 
 -- ===== Bridges =============================================================
