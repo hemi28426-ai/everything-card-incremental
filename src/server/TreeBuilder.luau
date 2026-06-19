@@ -16,11 +16,11 @@ local TreeBuilder = {}
 local PAD_SIZE = Vector3.new(8, 1, 8)
 local PAD_Y = 0.5
 
-local HUB_RADIUS = 82
-local ISLAND_RADIUS = 78
-local GOLD = Vector3.new(0, 0, 200)
-local GREEN = Vector3.new(0, 0, -200)
-local SHOP = Vector3.new(-210, 0, 0)
+local HUB_RADIUS = Config.Layout.HubRadius
+local ISLAND_RADIUS = Config.Layout.IslandRadius
+local GOLD = Vector3.new(Config.Layout.Gold[1], 0, Config.Layout.Gold[2])
+local GREEN = Vector3.new(Config.Layout.Green[1], 0, Config.Layout.Green[2])
+local SHOP = Vector3.new(Config.Layout.Shop[1], 0, Config.Layout.Shop[2])
 
 local function makePart(props)
 	local part = Instance.new("Part")
@@ -68,7 +68,7 @@ local function buildPad(treeNode, folder, onBuy)
 		Name = "Pad_" .. treeNode.Id,
 		Size = PAD_SIZE,
 		CFrame = CFrame.new(x, PAD_Y, z),
-		Color = color,
+		Color = Color3.fromRGB(20, 18, 28), -- dark tile; the trim + on-pad gui carry the colour
 		Area = treeNode.Area,
 		Parent = folder,
 	})
@@ -104,9 +104,9 @@ local function buildPath(fromNode, toNode, folder)
 	end
 	makePart({
 		Name = "Path_" .. toNode.Id,
-		Size = Vector3.new(1.6, 0.2, math.max(distance - 6, 1)),
+		Size = Vector3.new(1, 0.3, math.max(distance - 7, 1)),
 		CFrame = CFrame.lookAt((a + b) / 2, b),
-		Color = (Config.BranchColors[toNode.Branch] or Color3.fromRGB(200, 200, 200)):Lerp(Color3.new(0, 0, 0), 0.25),
+		Color = Color3.fromRGB(205, 205, 220), -- bright connector line, like a skill tree
 		Area = toNode.Area,
 		Parent = folder,
 	})
@@ -128,14 +128,15 @@ end
 -- buttons live on a SurfaceGui the client parents to this part.
 
 local function buildRollTv(folder)
+	local tv = Config.Layout.TV
 	local screen = makePart({
 		Name = "RollTV",
 		Size = Vector3.new(1.5, 18, 30),
-		CFrame = CFrame.new(76, 11, 0),
+		CFrame = CFrame.new(tv[1], tv[2], tv[3]),
 		Color = Color3.fromRGB(28, 24, 40),
 		Parent = folder,
 	})
-	makePart({ Name = "TvFrame", Size = Vector3.new(1.2, 20, 32), CFrame = CFrame.new(76.6, 11, 0), Color = Color3.fromRGB(74, 64, 100), Parent = screen })
+	makePart({ Name = "TvFrame", Size = Vector3.new(1.2, 20, 32), CFrame = CFrame.new(tv[1] + 0.6, tv[2], tv[3]), Color = Color3.fromRGB(74, 64, 100), Parent = screen })
 end
 
 -- ===== rebirth altar (far end of the GOLD island) =========================
@@ -239,7 +240,7 @@ end
 
 local function placeImportedShop(folder, onBuyShop)
 	-- ground for the shop island (always visible, no bridge-gating)
-	disc(folder, "ShopGround", SHOP, 80, Color3.fromRGB(150, 148, 158), -2)
+	disc(folder, "ShopGround", SHOP, ISLAND_RADIUS, Color3.fromRGB(150, 148, 158), -2)
 
 	local shop = workspace:WaitForChild("ImportedShop", 15)
 	if not shop then
@@ -272,6 +273,20 @@ local function placeImportedShop(folder, onBuyShop)
 	end
 	local pivot = shop:GetBoundingBox()
 	shop:TranslateBy(Vector3.new(SHOP.X - pivot.X, 0, SHOP.Z - pivot.Z))
+
+	-- rotate the whole shop so the cashier faces the bridge (toward the hub).
+	-- We read the cashier's current facing and spin the model about its centre
+	-- until that look points from the shop toward the hub centre.
+	local npc = shop:FindFirstChild("showcase npc")
+	local root = npc and (npc:FindFirstChild("HumanoidRootPart") or npc:FindFirstChild("Torso"))
+	if root then
+		local look = root.CFrame.LookVector
+		local curYaw = math.atan2(look.X, look.Z)
+		local desiredYaw = math.atan2(-SHOP.X, -SHOP.Z) -- direction shop → hub centre
+		local dyaw = desiredYaw - curYaw
+		local centre = shop:GetBoundingBox().Position
+		shop:PivotTo(CFrame.new(centre) * CFrame.Angles(0, dyaw, 0) * CFrame.new(-centre) * shop:GetPivot())
+	end
 
 	for _, item in Config.Shop do
 		attachShopPrompt(shop, item, onBuyShop)
@@ -350,8 +365,8 @@ function TreeBuilder.Build(onBuy, onBuyBridge, onBuyShop)
 	buildAltar(folder)
 
 	buildBridge(folder, "gold", Vector3.new(0, 0, HUB_RADIUS), Vector3.new(0, 0, GOLD.Z - ISLAND_RADIUS), onBuyBridge)
-	buildBridge(folder, "green", Vector3.new(0, 0, -HUB_RADIUS), Vector3.new(0, 0, GREEN.Z + ISLAND_RADIUS), onBuyBridge)
-	buildBridge(folder, "shop", Vector3.new(-HUB_RADIUS, 0, 0), Vector3.new(SHOP.X + 80, 0, 0), onBuyBridge)
+	buildBridge(folder, "green", Vector3.new(-HUB_RADIUS, 0, 0), Vector3.new(GREEN.X + ISLAND_RADIUS, 0, 0), onBuyBridge)
+	buildBridge(folder, "shop", Vector3.new(0, 0, -HUB_RADIUS), Vector3.new(0, 0, SHOP.Z + ISLAND_RADIUS), onBuyBridge)
 
 	folder.Parent = workspace
 

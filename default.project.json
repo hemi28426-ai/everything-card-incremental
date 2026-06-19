@@ -41,8 +41,8 @@
         "$properties": {
           "Anchored": true,
           "Size": [12, 1, 12],
-          "Position": [5, 1, 0],
-          "Orientation": [0, -90, 0],
+          "Position": [0, 1, -62],
+          "Orientation": [0, 180, 0],
           "Duration": 0,
           "Color": [0.73, 0.7, 0.82],
           "Material": "SmoothPlastic",

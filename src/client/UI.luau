@@ -1150,51 +1150,54 @@ function UI:BuildPadSurfaces()
 			continue
 		end
 
+		local branchColor = Config.BranchColors[treeNode.Branch] or Color3.fromRGB(200, 200, 200)
 		local gui = create("SurfaceGui", {
 			Face = Enum.NormalId.Top,
 			SizingMode = Enum.SurfaceGuiSizingMode.PixelsPerStud,
 			PixelsPerStud = 25,
-			-- child of the pad part: renders on top, survives respawns
-			-- only render the billboard when you're near it; with ~75 pads this
-			-- is the single biggest perf win as the tree fills out
-			MaxDistance = 65,
+			-- child of the pad part: renders on top, survives respawns. Only render
+			-- when you're near it — the single biggest perf win as the tree fills out
+			MaxDistance = 70,
 			Parent = pad,
 		})
+		-- a dark tile with a coloured border, like a real skill-tree node. The
+		-- whole thing is rotated so the text reads as you walk up to it.
 		local bg = create("Frame", {
-			BackgroundTransparency = 1,
+			BackgroundColor3 = Color3.fromRGB(16, 14, 24),
+			BackgroundTransparency = 0.05,
 			Size = UDim2.new(1, 0, 1, 0),
-			-- endgame pads are approached from the north, flip their text
-			Rotation = if treeNode.Branch == "Endgame" then 180 else 0,
+			Rotation = treeNode.TextRot or 0,
 			Parent = gui,
 		})
+		addCorner(bg, UDim.new(0, 14))
+		create("UIStroke", { Color = branchColor, Thickness = 5, Parent = bg })
 		create("TextLabel", {
 			BackgroundTransparency = 1,
-			Position = UDim2.new(0, 8, 0, 6),
-			Size = UDim2.new(1, -16, 0, 44),
+			Position = UDim2.new(0, 0, 0, 4),
+			Size = UDim2.new(1, 0, 0, 92),
 			Font = Enum.Font.GothamBlack,
-			TextSize = 24,
-			TextWrapped = true,
-			TextColor3 = Color3.fromRGB(15, 10, 25),
-			Text = treeNode.Name,
+			TextSize = 64,
+			Text = treeNode.Icon or "•",
+			TextColor3 = branchColor,
 			Parent = bg,
 		})
 		create("TextLabel", {
 			BackgroundTransparency = 1,
-			Position = UDim2.new(0, 10, 0, 52),
-			Size = UDim2.new(1, -20, 0, 60),
+			Position = UDim2.new(0, 6, 0, 98),
+			Size = UDim2.new(1, -12, 0, 42),
 			Font = Enum.Font.GothamBold,
-			TextSize = 17,
+			TextSize = 18,
 			TextWrapped = true,
-			TextColor3 = Color3.fromRGB(35, 26, 55),
-			Text = treeNode.Desc,
+			TextColor3 = Color3.fromRGB(238, 235, 248),
+			Text = treeNode.Name,
 			Parent = bg,
 		})
 		local costLabel = create("TextLabel", {
 			BackgroundTransparency = 1,
-			Position = UDim2.new(0, 8, 1, -62),
-			Size = UDim2.new(1, -16, 0, 54),
+			Position = UDim2.new(0, 6, 0, 142),
+			Size = UDim2.new(1, -12, 0, 54),
 			Font = Enum.Font.GothamBlack,
-			TextSize = 28,
+			TextSize = 26,
 			TextWrapped = true,
 			TextColor3 = COLORS.Text,
 			Text = "",
@@ -1550,9 +1553,10 @@ function UI:UpdatePads()
 		end
 		if entry.LastAfford ~= affordable then
 			entry.LastAfford = affordable
+			-- light text on the dark tile
 			entry.CostLabel.TextColor3 = if affordable
-				then Color3.fromRGB(10, 60, 25)
-				else Color3.fromRGB(120, 20, 30)
+				then Color3.fromRGB(130, 240, 150)
+				else Color3.fromRGB(240, 140, 150)
 		end
 		if entry.Prompt and entry.LastPrompt ~= promptOn then
 			entry.LastPrompt = promptOn
