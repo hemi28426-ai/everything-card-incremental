@@ -9,6 +9,9 @@
       },
       "DialogModule": {
         "$path": "assets/DialogModule.rbxmx"
+      },
+      "MetalDoor": {
+        "$path": "assets/MetalDoor.rbxmx"
       }
     },
 

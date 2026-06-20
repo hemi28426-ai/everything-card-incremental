@@ -15,6 +15,7 @@ local DataManager = require(script.Parent:WaitForChild("DataManager"))
 local CardPool = require(script.Parent:WaitForChild("CardPool"))
 local TreeBuilder = require(script.Parent:WaitForChild("TreeBuilder"))
 local Leaderboard = require(script.Parent:WaitForChild("Leaderboard"))
+local Backrooms = require(script.Parent:WaitForChild("Backrooms"))
 
 -- ===== remotes =============================================================
 
@@ -218,6 +219,7 @@ local function buildState(session, includeCards)
 		EquippedPack = data.EquippedPack,
 		RareCardCount = tierCardCount(data, "Rare"),
 		DivineCardCount = tierCardCount(data, "Divine"),
+		HasKey = data.HasKey == true,
 		PackUnlockable = (function()
 			local m = {}
 			for _, pack in Config.Packs do
@@ -807,6 +809,70 @@ local function onBuyPack(player, packId)
 	pushState(player, false)
 end
 
+-- Grant a random pack the player doesn't own yet (the Backrooms free-pack
+-- button). Auto-equips it if nothing is equipped.
+local function grantRandomPack(player)
+	local session = sessions[player]
+	if not session then
+		return
+	end
+	local data = session.Data
+	local missing = {}
+	for _, pack in Config.Packs do
+		if not data.UnlockedPacks[pack.Id] then
+			table.insert(missing, pack.Id)
+		end
+	end
+	if #missing == 0 then
+		tickerRemote:FireClient(player, "🎁 You already own every Card Pack!")
+		return
+	end
+	local id = missing[math.random(1, #missing)]
+	data.UnlockedPacks[id] = true
+	data.PackLoaderUnlocked = true -- the free find also lets you equip
+	if data.EquippedPack == false or data.EquippedPack == nil then
+		data.EquippedPack = id
+	end
+	session.Stats = Config.ComputeStats(data)
+	tickerRemote:FireClient(player, ("🎁 Free Card Pack: %s!"):format(Config.PackById[id].Name))
+	pushState(player, false)
+end
+
+-- Buy the Backrooms Key in the shop (costs a lot of tokens AND coins).
+local function onBuyKey(player)
+	local session = sessions[player]
+	if not session then
+		return
+	end
+	local data = session.Data
+	if data.HasKey then
+		return
+	end
+	local tokenCost = Config.ApplyPrice(Config.Key.Tokens, session.Stats)
+	local coinCost = Config.ApplyPrice(Config.Key.Coins, session.Stats)
+	if data.RebirthTokens < tokenCost or data.Coins < coinCost then
+		return
+	end
+	data.RebirthTokens -= tokenCost
+	data.Coins -= coinCost
+	data.HasKey = true
+	tickerRemote:FireClient(player, "🗝️ You bought the Backrooms Key! Use the door behind the cashier.")
+	pushState(player, false)
+end
+
+-- The door behind the cashier: needs the Key, then teleports you into Level 0.
+local function onEnterBackrooms(player)
+	local session = sessions[player]
+	if not session then
+		return
+	end
+	if not session.Data.HasKey then
+		tickerRemote:FireClient(player, "🔒 The door is locked. Buy the Backrooms Key in the shop.")
+		return
+	end
+	Backrooms.Enter(player)
+end
+
 -- Equip one card pack (or "" / false to unequip). Only owned packs allowed.
 equipPackRemote.OnServerEvent:Connect(function(player, packId)
 	local session = sessions[player]
@@ -1192,8 +1258,20 @@ end)
 
 -- ===== world ===============================================================
 
-TreeBuilder.Build(onBuyUpgrade, onBuyBridge, onBuyShop, onBuyPack)
+TreeBuilder.Build(onBuyUpgrade, onBuyBridge, onBuyShop, onBuyPack, onBuyKey, onEnterBackrooms)
 Leaderboard.Start()
+
+-- Backrooms (Level 0): a far-off maze you reach with the Key + the shop door
+Backrooms.Init({
+	OnFreePack = grantRandomPack,
+	GetHomeCFrame = function()
+		local spawn = workspace:FindFirstChildWhichIsA("SpawnLocation")
+		if spawn then
+			return spawn.CFrame * CFrame.new(0, 4, 0)
+		end
+		return CFrame.new(0, 6, -56)
+	end,
+})
 
 -- the card pool scans fastest when someone bought Fresh Scan upgrades
 CardPool.Init(function()

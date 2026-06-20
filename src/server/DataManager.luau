@@ -46,8 +46,9 @@ local DEFAULT_DATA = {
 	Bridges = {}, -- which -> parts built (gold/green/shop)
 	ShopUpgrades = {}, -- shop item id -> level
 	PackLoaderUnlocked = false, -- bought the Pack Loader 3000 (lets you equip packs)
-	UnlockedPacks = {}, -- packId -> true (auto-unlocks as you meet requirements)
+	UnlockedPacks = {}, -- packId -> true (unlocked by buying the world buttons)
 	EquippedPack = false, -- the one currently-equipped pack id, or false
+	HasKey = false, -- owns the Backrooms Key (door behind the cashier works)
 	LastSeen = 0,
 }
 

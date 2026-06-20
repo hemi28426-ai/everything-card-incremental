@@ -294,7 +294,93 @@ local function attachShopPrompt(shop, item, onBuyShop)
 	price.Parent = billboard
 end
 
-local function placeImportedShop(folder, onBuyShop)
+-- a little gold key on the shop counter, with a buy prompt (costs tokens+coins)
+local function buildKey(parent, cf, onBuyKey)
+	local model = Instance.new("Model")
+	model.Name = "BackroomsKey"
+	local gold = Color3.fromRGB(235, 196, 70)
+	local function kp(size, rel, shape)
+		local p = makePart({ Name = "KeyPart", Size = size, CFrame = cf * rel, Color = gold, Material = Enum.Material.Metal, Parent = model })
+		if shape then
+			p.Shape = shape
+		end
+		return p
+	end
+	local ring = kp(Vector3.new(0.45, 2.4, 2.4), CFrame.new(-1.6, 0, 0) * CFrame.Angles(0, 0, math.rad(90)), Enum.PartType.Cylinder)
+	kp(Vector3.new(3.2, 0.5, 0.5), CFrame.new(0.6, 0, 0))
+	kp(Vector3.new(0.5, 1.0, 0.5), CFrame.new(1.9, -0.55, 0))
+	kp(Vector3.new(0.5, 0.7, 0.5), CFrame.new(2.4, -0.45, 0))
+	model.PrimaryPart = ring
+
+	local board = Instance.new("BillboardGui")
+	board.Size = UDim2.fromOffset(230, 64)
+	board.StudsOffset = Vector3.new(0, 3, 0)
+	board.AlwaysOnTop = true
+	board.MaxDistance = 60
+	board.Parent = ring
+	local t1 = Instance.new("TextLabel")
+	t1.BackgroundTransparency = 1
+	t1.Size = UDim2.new(1, 0, 0.5, 0)
+	t1.Font = Enum.Font.GothamBlack
+	t1.TextScaled = true
+	t1.TextColor3 = Color3.fromRGB(255, 230, 120)
+	t1.Text = "🗝️ BACKROOMS KEY"
+	t1.Parent = board
+	local t2 = Instance.new("TextLabel")
+	t2.BackgroundTransparency = 1
+	t2.Position = UDim2.new(0, 0, 0.5, 0)
+	t2.Size = UDim2.new(1, 0, 0.5, 0)
+	t2.Font = Enum.Font.GothamBold
+	t2.TextScaled = true
+	t2.TextColor3 = Color3.fromRGB(235, 238, 245)
+	t2.Text = ("⭐%d  +  🪙5M"):format(Config.Key.Tokens)
+	t2.Parent = board
+
+	local prompt = Instance.new("ProximityPrompt")
+	prompt.ActionText = "Buy"
+	prompt.ObjectText = "Backrooms Key"
+	prompt.HoldDuration = 0.4
+	prompt.MaxActivationDistance = 10
+	prompt.RequiresLineOfSight = false
+	prompt.Parent = ring
+	prompt.Triggered:Connect(function(player)
+		onBuyKey(player)
+	end)
+	model.Parent = parent
+end
+
+-- the metal door behind the cashier: swing script stripped, just an E to enter
+local function buildEntryDoor(parent, cf, onEnter)
+	local template = ReplicatedStorage:FindFirstChild("MetalDoor")
+	if not template then
+		return
+	end
+	local door = template:Clone()
+	for _, d in door:GetDescendants() do
+		if d:IsA("BaseScript") then
+			d:Destroy()
+		elseif d:IsA("BasePart") then
+			d.Anchored = true
+		end
+	end
+	local bbcf, size = door:GetBoundingBox()
+	local centerToPivot = bbcf:ToObjectSpace(door:GetPivot())
+	door:PivotTo(cf * CFrame.new(0, size.Y / 2, 0) * centerToPivot)
+	door.Parent = parent
+	local anchor = door.PrimaryPart or door:FindFirstChildWhichIsA("BasePart", true)
+	local prompt = Instance.new("ProximityPrompt")
+	prompt.ActionText = "Enter"
+	prompt.ObjectText = "🚪 The Backrooms"
+	prompt.HoldDuration = 0.4
+	prompt.MaxActivationDistance = 11
+	prompt.RequiresLineOfSight = false
+	prompt.Parent = anchor
+	prompt.Triggered:Connect(function(player)
+		onEnter(player)
+	end)
+end
+
+local function placeImportedShop(folder, onBuyShop, onBuyKey, onEnterBackrooms)
 	-- ground for the shop island (always visible, no bridge-gating)
 	disc(folder, "ShopGround", SHOP, ISLAND_RADIUS, Color3.fromRGB(150, 148, 158), -2)
 
@@ -347,6 +433,23 @@ local function placeImportedShop(folder, onBuyShop)
 	for _, item in Config.Shop do
 		attachShopPrompt(shop, item, onBuyShop)
 	end
+
+	-- the Key (for sale, in front of the cashier) + the Backrooms door (behind him)
+	if npc and root then
+		local look = root.CFrame.LookVector
+		look = Vector3.new(look.X, 0, look.Z)
+		if look.Magnitude > 0.01 then
+			look = look.Unit
+			local pos = root.Position
+			if onBuyKey then
+				buildKey(folder, CFrame.new(pos.X + look.X * 4, pos.Y + 0.5, pos.Z + look.Z * 4), onBuyKey)
+			end
+			if onEnterBackrooms then
+				local behind = pos - look * 7
+				buildEntryDoor(folder, CFrame.lookAt(Vector3.new(behind.X, 0, behind.Z), Vector3.new(behind.X, 0, behind.Z) + look), onEnterBackrooms)
+			end
+		end
+	end
 end
 
 -- ===== bridges =============================================================
@@ -394,7 +497,7 @@ end
 
 -- ===== build everything ====================================================
 
-function TreeBuilder.Build(onBuy, onBuyBridge, onBuyShop, onBuyPack)
+function TreeBuilder.Build(onBuy, onBuyBridge, onBuyShop, onBuyPack, onBuyKey, onEnterBackrooms)
 	for _, legacyName in { "Baseplate", "SpawnPlaza", "MainIsland", "GoldenIsland", "GreenIsland", "RebirthBridge", "UpgradeTree" } do
 		local legacy = workspace:FindFirstChild(legacyName)
 		if legacy then
@@ -434,7 +537,7 @@ function TreeBuilder.Build(onBuy, onBuyBridge, onBuyShop, onBuyPack)
 
 	-- place the imported shop after the folder exists (it lives in workspace)
 	task.spawn(function()
-		placeImportedShop(folder, onBuyShop)
+		placeImportedShop(folder, onBuyShop, onBuyKey, onEnterBackrooms)
 	end)
 end
 

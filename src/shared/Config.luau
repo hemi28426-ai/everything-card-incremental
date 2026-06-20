@@ -483,6 +483,33 @@ function Config.ApplyPrice(cost, stats)
 	return math.max(1, math.floor(cost * mult))
 end
 
+-- ===== Backrooms (Level 0) =================================================
+-- A procedurally-generated endless yellow maze, far from the main world. You buy
+-- the Key in the shop (a lot of tokens + coins), then use the door behind the
+-- cashier to teleport in. No entities. Fog hides the end. Rare exit doors take
+-- you home; a rare free-pack button gives a random Card Pack.
+Config.Backrooms = {
+	Origin = Vector3.new(100000, 0, 100000), -- region centre, far away
+	ChunkSize = 16,
+	RenderDistance = 5, -- chunks each way around a player (kept small + fogged)
+	WallHeight = 11,
+	WallThickness = 1.5,
+	FogEnd = 80, -- client fog distance — "you can't see the end"
+	ExitDoorChance = 0.014, -- chance per chunk to hold a way out
+	PackButtonChance = 0.011, -- chance per chunk for the free card-pack button
+	-- textures lifted from the uploaded Level 0 map, for the authentic look
+	WallTexture = "rbxassetid://10194957829",
+	WallTexture2 = "rbxassetid://223586024",
+	FloorTexture = "rbxassetid://9987698068",
+	CeilingTexture = "rbxassetid://9987633354",
+	FloorColor = Color3.fromRGB(182, 158, 84),
+	WallColor = Color3.fromRGB(216, 198, 120),
+	CeilingColor = Color3.fromRGB(236, 232, 214),
+}
+
+-- The Backrooms Key — sold in the shop for a lot of tokens AND coins.
+Config.Key = { Tokens = 1000, Coins = 5_000_000 }
+
 Config.NodeById = {}
 local function indexTree(tree)
 	for _, treeNode in tree do
