@@ -23,7 +23,7 @@ Config.Layout = {
 	Gold = { 0, 230 }, -- rebirth island (north)
 	Green = { -230, 0 }, -- automation island (west)
 	Shop = { 0, -230 }, -- imported shop (south)
-	TV = { 90, 11, 0 }, -- card opener, east edge
+	TV = { 72, 11, 8 }, -- card opener, east of the tree (inside the rim)
 }
 
 -- ===== Cards / tiers =======================================================
@@ -258,6 +258,10 @@ hnode({ Id = "seed", Name = "First Profits", Desc = "x1.5 ALL coin earnings", Ic
 hnode({ Id = "clover", Name = "Four-Leaf Clover", Desc = "+5% rare-tier chance", Icon = "🍀", Branch = "Trunk", Cost = 400, Requires = "seed" })
 hnode({ Id = "fork", Name = "The Fork", Desc = "+1 equip slot — then choose your path", Icon = "🔀", Branch = "Trunk", Cost = 4000, Requires = "clover" })
 
+-- Pack Loader unlock: spend 5 Rare cards (+coins) to switch on the Pack Loader
+-- 3000 AND get the Basic Card Pack for free. Connected to the hub tree.
+hnode({ Id = "packloader", Name = "Pack Loader", Desc = "Unlocks card packs + grants the BASIC pack", Icon = "🃏", Branch = "Pack", Cost = 250000, SpendRares = 5, UnlocksPack = "basic", GrantsLoader = true, Requires = "clover" })
+
 -- LUCK arm (defined first so it lays out on the LEFT)
 local luckDefs = {
 	{ Id = "lA", Name = "Rabbit's Foot", Desc = "+8% rare-tier chance", Icon = "🐰", Cost = 8000, Requires = "fork" },
@@ -343,6 +347,9 @@ rnode({ Id = "rm1", Name = "Token Tithe", Desc = "+2 tokens from every rebirth",
 rnode({ Id = "rm2", Name = "Legendary Keeper", Desc = "Legendary cards survive rebirth", Icon = "🛡️", Branch = "RMeta", Cost = 10, Requires = "rm1" })
 rnode({ Id = "rm3", Name = "Token Hoarder", Desc = "+3 tokens from every rebirth", Icon = "⭐", Branch = "RMeta", Cost = 18, Requires = "rm1" })
 
+-- Rebirth Card Pack unlock — a button on the gold tree
+rnode({ Id = "rebirthpack", Name = "Rebirth Pack", Desc = "Unlocks the REBIRTH card pack", Icon = "♻️", Branch = "Pack", Cost = 1000, UnlocksPack = "rebirth", Requires = "core" })
+
 -- radiate from the island centre over 300°, leaving the south (toward the
 -- bridge) open for the altar
 radialTree(R, "core", Config.Layout.Gold, -60, 300, 18)
@@ -369,6 +376,9 @@ anode({ Id = "overclock1", Name = "Overclock I", Desc = "Auto-roll 25% faster", 
 anode({ Id = "overclock2", Name = "Overclock II", Desc = "Auto-roll 30% faster again", Icon = "⚡", Cost = 10, Requires = "overclock1" })
 anode({ Id = "overclock3", Name = "Overclock III", Desc = "Auto-roll 40% faster again", Icon = "⚡", Cost = 16, Requires = "overclock2" })
 anode({ Id = "autorebirth", Name = "Auto Rebirth", Desc = "Rebirths automatically when worth it", Icon = "🔁", Cost = 25, Requires = "autocore" })
+
+-- Automation Card Pack unlock — a button on the green tree (needs all the rest)
+anode({ Id = "autopack", Name = "Automation Pack", Desc = "Unlocks the AUTOMATION card pack", Icon = "🤖", Cost = 40, UnlocksPack = "automation", RequireAllAutomation = true, Requires = "autocore" })
 
 -- radiate from the green island centre over 300°, leaving the east (toward the
 -- bridge) open
@@ -401,6 +411,9 @@ Config.Shop = {
 	{ Id = "flask3", ItemName = "Flask3", Name = "Speed Flask", Desc = "+50% walk speed, permanently", Cost = 18000, Mult = 1, MaxLevel = 1 },
 	{ Id = "luckyblock", ItemName = "Lucky Block", Name = "Lucky Block", Desc = "Open a guaranteed Mythic+ card (with bonus value)", Cost = 60000, Mult = 1.35 },
 	{ Id = "flask2", ItemName = "Flask2withlid", Name = "Legendary Flask", Desc = "Rolls SKIP Common→Epic — only Legendary+!", Cost = 750000, Mult = 1, MaxLevel = 1 },
+	-- the Ultimate Card Pack is a purchasable shop item (no imported model; the
+	-- builder gives it its own display pad). Costs a Divine card + tokens + coins.
+	{ Id = "ultimatepack", Name = "Ultimate Pack", Desc = "Unlocks the ULTIMATE card pack", Icon = "👑", Color = Color3.fromRGB(255, 120, 200), Cost = 10_000_000, TokenCost = 1000, DivineCards = 1, Mult = 1, MaxLevel = 1, UnlocksPack = "ultimate" },
 }
 Config.ShopById = {}
 for _, item in Config.Shop do
@@ -414,63 +427,16 @@ end
 Config.LuckyBlock = { MinTier = "Mythic", MaxTier = "Divine", ValueMult = 1.6 }
 
 -- ===== Card Packs ==========================================================
--- Each pack is UNLOCKED by buying a dedicated upgrade button out in the world
--- (it spends cards / tokens). Once bought it's yours forever; you then EQUIP one
--- at a time at the Pack Loader 3000. Buttons:
---   * Basic     — on the HUB (also switches the Pack Loader on). Spend 5 Rares.
---   * Rebirth   — on the GOLD island. Costs 1,000 tokens.
---   * Automation— on the GREEN island. Needs every Automation upgrade.
---   * Ultimate  — in the SHOP. 1,000 tokens + a Divine card + every upgrade.
--- Art (Image) is filled in later; for now each shows an icon.
+-- Packs are UNLOCKED by buying their button, which is part of an upgrade tree
+-- (Basic on the hub — it also switches the Pack Loader on and is granted for
+-- free; Rebirth on the gold tree; Automation on the green tree) or the shop
+-- (Ultimate). Once owned you EQUIP one at a time at the Pack Loader 3000. These
+-- defs drive the effects + the Loader UI. Art (Image) is filled in later.
 Config.Packs = {
-	{
-		Id = "basic",
-		Name = "Basic Pack",
-		Icon = "🃏",
-		Color = Color3.fromRGB(150, 120, 255),
-		Image = "", -- set to "rbxassetid://..." when you have the texture
-		Desc = "↑ Legendary odds + 5 free Roll-Speed levels",
-		Area = "hub",
-		Pos = { 64, -22 },
-		ReqText = "Spend 5 Rare cards + 250K coins",
-		Unlock = { RareCards = 5, Coins = 250000, GrantsLoader = true },
-	},
-	{
-		Id = "rebirth",
-		Name = "Rebirth Pack",
-		Icon = "♻️",
-		Color = Color3.fromRGB(255, 215, 80),
-		Image = "",
-		Desc = "+50% tokens & more Legendary+ — but rolls are 2x slower",
-		Area = "gold",
-		Pos = { 24, 160 },
-		ReqText = "Costs 1,000 Rebirth Tokens",
-		Unlock = { Tokens = 1000 },
-	},
-	{
-		Id = "automation",
-		Name = "Automation Pack",
-		Icon = "🤖",
-		Color = Color3.fromRGB(120, 220, 150),
-		Image = "",
-		Desc = "Automation runs much faster & auto-buys Roll Speed",
-		Area = "green",
-		Pos = { -230, 70 },
-		ReqText = "Own every Automation upgrade",
-		Unlock = { AllAutomation = true },
-	},
-	{
-		Id = "ultimate",
-		Name = "Ultimate Pack",
-		Icon = "👑",
-		Color = Color3.fromRGB(255, 120, 200),
-		Image = "",
-		Desc = "+20 Roll-Speed levels, Mythic+ boost, ALL prices halved",
-		Area = "shop",
-		Pos = { 0, -160 },
-		ReqText = "1,000 Tokens + a Divine card + every upgrade",
-		Unlock = { Tokens = 1000, AllUpgrades = true, DivineCards = 1 },
-	},
+	{ Id = "basic", Name = "Basic Pack", Icon = "🃏", Color = Color3.fromRGB(150, 120, 255), Image = "", Desc = "↑ Legendary odds + 5 free Roll-Speed levels" },
+	{ Id = "rebirth", Name = "Rebirth Pack", Icon = "♻️", Color = Color3.fromRGB(255, 215, 80), Image = "", Desc = "+50% tokens & more Legendary+ — but rolls are 2x slower" },
+	{ Id = "automation", Name = "Automation Pack", Icon = "🤖", Color = Color3.fromRGB(120, 220, 150), Image = "", Desc = "Automation runs much faster & auto-buys Roll Speed" },
+	{ Id = "ultimate", Name = "Ultimate Pack", Icon = "👑", Color = Color3.fromRGB(255, 120, 200), Image = "", Desc = "+20 Roll-Speed levels, Mythic+ boost, ALL prices halved" },
 }
 Config.PackById = {}
 for _, pack in Config.Packs do
@@ -484,27 +450,13 @@ function Config.ApplyPrice(cost, stats)
 end
 
 -- ===== Backrooms (Level 0) =================================================
--- A procedurally-generated endless yellow maze, far from the main world. You buy
--- the Key in the shop (a lot of tokens + coins), then use the door behind the
--- cashier to teleport in. No entities. Fog hides the end. Rare exit doors take
--- you home; a rare free-pack button gives a random Card Pack.
+-- The real uploaded Level 0 map (ServerStorage.BackroomsMap, 400x400) placed far
+-- from the main world. Buy the Key in the shop, then the door behind the cashier
+-- teleports you in. No entities. The client adds fog so you can't see the edge.
+-- Scattered exit doors take you home; a hidden button grants a free Card Pack.
 Config.Backrooms = {
-	Origin = Vector3.new(100000, 0, 100000), -- region centre, far away
-	ChunkSize = 16,
-	RenderDistance = 5, -- chunks each way around a player (kept small + fogged)
-	WallHeight = 11,
-	WallThickness = 1.5,
-	FogEnd = 80, -- client fog distance — "you can't see the end"
-	ExitDoorChance = 0.014, -- chance per chunk to hold a way out
-	PackButtonChance = 0.011, -- chance per chunk for the free card-pack button
-	-- textures lifted from the uploaded Level 0 map, for the authentic look
-	WallTexture = "rbxassetid://10194957829",
-	WallTexture2 = "rbxassetid://223586024",
-	FloorTexture = "rbxassetid://9987698068",
-	CeilingTexture = "rbxassetid://9987633354",
-	FloorColor = Color3.fromRGB(182, 158, 84),
-	WallColor = Color3.fromRGB(216, 198, 120),
-	CeilingColor = Color3.fromRGB(236, 232, 214),
+	Origin = Vector3.new(100000, 0, 100000), -- where the map is dropped, far away
+	FogEnd = 90, -- client fog distance — "you can't see the end"
 }
 
 -- The Backrooms Key — sold in the shop for a lot of tokens AND coins.
@@ -533,6 +485,7 @@ Config.BranchColors = {
 	RCap = Color3.fromRGB(235, 170, 95),
 	RMeta = Color3.fromRGB(220, 150, 255),
 	Automation = Color3.fromRGB(100, 200, 140),
+	Pack = Color3.fromRGB(180, 130, 255),
 }
 
 function Config.GetNodeCost(treeNode, level)

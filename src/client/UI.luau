@@ -1764,22 +1764,23 @@ function UI:UpdatePads()
 		local treeNode = Config.NodeById[nodeId]
 		local levels = if treeNode.IsRebirth then state.RebirthUpgrades else state.Upgrades
 		local level = levels[nodeId] or 0
+		local prereqOwned = not treeNode.Requires or (levels[treeNode.Requires] or 0) >= 1
+		local autoOk = not treeNode.IsAutomation or automationUnlocked
 
-		-- the WHOLE tree is visible once you can reach its area; what changes is
-		-- whether you can buy yet (prerequisite owned, automation unlocked)
-		local visible = areaReachable(state, treeNode.Area)
+		-- progressive reveal: a node only appears once you can reach its area AND
+		-- its prerequisite is owned — so the tree grows one upgrade at a time
+		local visible = areaReachable(state, treeNode.Area) and prereqOwned and autoOk
 		setPadVisible(entry, visible)
 		if not visible then
 			continue
 		end
 
-		local prereqOwned = not treeNode.Requires or (levels[treeNode.Requires] or 0) >= 1
-		local autoOk = not treeNode.IsAutomation or automationUnlocked
-		local maxed = treeNode.MaxLevel and level >= treeNode.MaxLevel
-
-		-- pads you own glow warm white (local-only color change). Cache so we
-		-- only write the property when the owned state actually flips.
-		local owned = level >= 1
+		-- pack-unlock nodes count as owned once their pack is unlocked (the hub one
+		-- resets on rebirth, so check the pack, not just the node level)
+		local packOwned = treeNode.UnlocksPack and state.UnlockedPacks and state.UnlockedPacks[treeNode.UnlocksPack]
+		local maxed = (treeNode.MaxLevel and level >= treeNode.MaxLevel) or packOwned
+		-- pads you own glow warm white (cache so we only write on a flip)
+		local owned = level >= 1 or packOwned
 		if entry.Trim and entry.LastOwned ~= owned then
 			entry.LastOwned = owned
 			entry.Trim.Color = if owned
@@ -1787,23 +1788,24 @@ function UI:UpdatePads()
 				else (Config.BranchColors[treeNode.Branch] or Color3.fromRGB(200, 200, 200))
 		end
 
-		-- compute the cost/lock label + affordability, then only write if changed
 		local text, affordable, promptOn
 		if maxed then
 			text, affordable, promptOn = "✓ OWNED", true, false
-		elseif not (prereqOwned and autoOk) then
-			local reqNode = treeNode.Requires and Config.NodeById[treeNode.Requires]
-			text = if not autoOk
-				then "🔒 Buy Automaton Core"
-				else ("🔒 " .. (reqNode and reqNode.Name or "locked"))
-			affordable, promptOn = false, false
 		else
 			local cost = Config.ApplyPrice(Config.GetNodeCost(treeNode, level), state.Stats)
-			local prefix = if treeNode.MaxLevel == nil then ("Lv %d\n"):format(level) else ""
 			local icon = if treeNode.IsRebirth then "⭐" else "🪙"
 			local wallet = if treeNode.IsRebirth then state.RebirthTokens else state.Coins
-			text = prefix .. icon .. " " .. Format(cost)
-			affordable, promptOn = wallet >= cost, true
+			if treeNode.SpendRares then
+				-- the Pack Loader node also spends Rare cards
+				local have = state.RareCardCount or 0
+				text = ("%s %s\n🃏 %d/%d Rares"):format(icon, Format(cost), math.min(have, treeNode.SpendRares), treeNode.SpendRares)
+				affordable = wallet >= cost and have >= treeNode.SpendRares
+			else
+				local prefix = if treeNode.MaxLevel == nil then ("Lv %d\n"):format(level) else ""
+				text = prefix .. icon .. " " .. Format(cost)
+				affordable = wallet >= cost
+			end
+			promptOn = true
 		end
 		if entry.LastText ~= text then
 			entry.LastText = text
@@ -1811,7 +1813,6 @@ function UI:UpdatePads()
 		end
 		if entry.LastAfford ~= affordable then
 			entry.LastAfford = affordable
-			-- light text on the dark tile
 			entry.CostLabel.TextColor3 = if affordable
 				then Color3.fromRGB(130, 240, 150)
 				else Color3.fromRGB(240, 140, 150)
@@ -1819,46 +1820,6 @@ function UI:UpdatePads()
 		if entry.Prompt and entry.LastPrompt ~= promptOn then
 			entry.LastPrompt = promptOn
 			entry.Prompt.Enabled = promptOn
-		end
-	end
-
-	-- card-pack unlock pads (own/req/affordability, gated by their island bridge)
-	if self.PackPads then
-		for packId, entry in self.PackPads do
-			local visible = areaReachable(state, entry.Area)
-			setPadVisible(entry, visible)
-			if visible then
-				local pack = entry.Pack
-				local owned = state.UnlockedPacks and state.UnlockedPacks[packId] == true
-				local text, color, promptOn
-				if owned then
-					text, color, promptOn = "✓ UNLOCKED", Color3.fromRGB(130, 240, 150), false
-				else
-					local u = pack.Unlock
-					local extra = ""
-					if u.RareCards then
-						extra = ("\nRares %d/%d"):format(math.min(state.RareCardCount or 0, u.RareCards), u.RareCards)
-					elseif u.DivineCards then
-						extra = ("\nDivine %d/%d"):format(math.min(state.DivineCardCount or 0, u.DivineCards), u.DivineCards)
-					end
-					local unlockable = state.PackUnlockable and state.PackUnlockable[packId] == true
-					text = pack.ReqText .. extra
-					color = if unlockable then Color3.fromRGB(130, 240, 150) else Color3.fromRGB(240, 140, 150)
-					promptOn = unlockable
-				end
-				if entry.LastText ~= text then
-					entry.LastText = text
-					entry.CostLabel.Text = text
-				end
-				if entry.LastColor ~= color then
-					entry.LastColor = color
-					entry.CostLabel.TextColor3 = color
-				end
-				if entry.Prompt and entry.LastPrompt ~= promptOn then
-					entry.LastPrompt = promptOn
-					entry.Prompt.Enabled = promptOn
-				end
-			end
 		end
 	end
 

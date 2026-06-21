@@ -21,6 +21,12 @@
       }
     },
 
+    "ServerStorage": {
+      "BackroomsMap": {
+        "$path": "assets/Backrooms.rbxmx"
+      }
+    },
+
     "StarterPlayer": {
       "StarterPlayerScripts": {
         "Client": {

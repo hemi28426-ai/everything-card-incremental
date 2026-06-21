@@ -54,7 +54,7 @@ local function createBoard()
 	board.Name = "GlobalLeaderboard"
 	board.Anchored = true
 	board.Size = Vector3.new(1.2, 13, 17) -- thin on X so it faces west like the TV
-	board.Position = Vector3.new(90, 9, 32) -- right next to the Card Opener, on the hub's east edge
+	board.Position = Vector3.new(72, 9, 40) -- next to the Card Opener, inside the rim
 	board.Color = Color3.fromRGB(25, 18, 40)
 	board.Material = Enum.Material.SmoothPlastic
 

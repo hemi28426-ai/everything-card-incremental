@@ -122,41 +122,6 @@ local function buildTree(tree, folder, onBuy)
 	end
 end
 
--- A standalone, slightly bigger pad that unlocks a Card Pack when bought. Tagged
--- with PackId (not NodeId) so the client renders + gates it separately. Pads on
--- an island carry that Area so they hide until the bridge is built.
-local function buildPackPad(pack, folder, onBuyPack)
-	local x, z = pack.Pos[1], pack.Pos[2]
-	local area = if pack.Area ~= "hub" then pack.Area else nil
-	local pad = makePart({
-		Name = "PackPad_" .. pack.Id,
-		Size = Vector3.new(10, 1, 10),
-		CFrame = CFrame.new(x, PAD_Y, z),
-		Color = Color3.fromRGB(18, 16, 26),
-		Area = area,
-		Parent = folder,
-	})
-	pad:SetAttribute("PackId", pack.Id)
-	makePart({
-		Name = "PackTrim",
-		Size = Vector3.new(11, 0.5, 11),
-		CFrame = CFrame.new(x, 0.25, z),
-		Color = pack.Color,
-		Area = area,
-		Parent = pad,
-	})
-	local prompt = Instance.new("ProximityPrompt")
-	prompt.Name = "PackPrompt"
-	prompt.ActionText = "Unlock"
-	prompt.ObjectText = pack.Name
-	prompt.HoldDuration = 0.4
-	prompt.MaxActivationDistance = 10
-	prompt.RequiresLineOfSight = false
-	prompt.Parent = pad
-	prompt.Triggered:Connect(function(player)
-		onBuyPack(player, pack.Id)
-	end)
-end
 
 -- ===== the Card TV =========================================================
 -- On the EAST edge of the hub (the side with no bridge). Its WEST face (−X)
@@ -179,18 +144,20 @@ end
 -- A kiosk next to the TV (south of it). Its WEST face holds a SurfaceGui the
 -- client builds: the unlock button, then your unlocked card packs to equip.
 
+-- Pack Loader 3000: a kiosk standing ON the hub right at the base of the coin
+-- tree, its screen (−X face) facing where you walk up. Equip-only.
+local PACKLOADER_POS = Vector3.new(24, 8, -42)
 local function buildPackLoader(folder)
-	local tv = Config.Layout.TV
+	local p = PACKLOADER_POS
 	local machine = makePart({
 		Name = "PackLoader",
 		Size = Vector3.new(1.5, 16, 16),
-		CFrame = CFrame.new(tv[1], 9, tv[3] - 34),
+		CFrame = CFrame.new(p.X, p.Y, p.Z),
 		Color = Color3.fromRGB(26, 30, 44),
 		Parent = folder,
 	})
-	makePart({ Name = "PackFrame", Size = Vector3.new(1.2, 18, 18), CFrame = CFrame.new(tv[1] + 0.6, 9, tv[3] - 34), Color = Color3.fromRGB(70, 80, 110), Parent = machine })
-	-- a little sign cube on top
-	makePart({ Name = "PackTop", Size = Vector3.new(2, 2, 18), CFrame = CFrame.new(tv[1], 18, tv[3] - 34), Color = Color3.fromRGB(90, 130, 200), Parent = machine })
+	makePart({ Name = "PackFrame", Size = Vector3.new(1.2, 18, 18), CFrame = CFrame.new(p.X + 0.6, p.Y, p.Z), Color = Color3.fromRGB(70, 80, 110), Parent = machine })
+	makePart({ Name = "PackTop", Size = Vector3.new(2, 2, 18), CFrame = CFrame.new(p.X, p.Y + 9, p.Z), Color = Color3.fromRGB(90, 130, 200), Parent = machine })
 end
 
 -- ===== rebirth altar (far end of the GOLD island) =========================
@@ -243,6 +210,9 @@ local function representativePart(inst)
 end
 
 local function attachShopPrompt(shop, item, onBuyShop)
+	if not item.ItemName then
+		return -- items without a physical model (e.g. the Ultimate Pack) get a pad instead
+	end
 	local inst = findItem(shop, item.ItemName)
 	if not inst then
 		warn(("[ECI] shop item not found: %s"):format(item.ItemName))
@@ -380,6 +350,47 @@ local function buildEntryDoor(parent, cf, onEnter)
 	end)
 end
 
+-- the Ultimate Pack as a purchasable display in the shop (a standing card + pad)
+local function buildUltimatePad(folder, item, pos, onBuyShop)
+	local col = item.Color or Color3.fromRGB(255, 120, 200)
+	local pad = makePart({ Name = "UltimatePackPad", Size = Vector3.new(7, 1, 7), CFrame = CFrame.new(pos), Color = Color3.fromRGB(18, 16, 26), Parent = folder })
+	makePart({ Name = "PackTrim", Size = Vector3.new(8, 0.5, 8), CFrame = CFrame.new(pos.X, pos.Y - 0.3, pos.Z), Color = col, Parent = pad })
+	local card = makePart({ Name = "Card", Size = Vector3.new(5, 7, 0.5), CFrame = CFrame.new(pos.X, pos.Y + 4, pos.Z), Color = Color3.fromRGB(24, 22, 34), Parent = pad })
+	local board = Instance.new("BillboardGui")
+	board.Size = UDim2.fromOffset(230, 80)
+	board.StudsOffset = Vector3.new(0, 5.5, 0)
+	board.AlwaysOnTop = true
+	board.MaxDistance = 70
+	board.Parent = card
+	local t1 = Instance.new("TextLabel")
+	t1.BackgroundTransparency = 1
+	t1.Size = UDim2.new(1, 0, 0.45, 0)
+	t1.Font = Enum.Font.GothamBlack
+	t1.TextScaled = true
+	t1.TextColor3 = col
+	t1.Text = "👑 " .. item.Name
+	t1.Parent = board
+	local t2 = Instance.new("TextLabel")
+	t2.BackgroundTransparency = 1
+	t2.Position = UDim2.new(0, 0, 0.45, 0)
+	t2.Size = UDim2.new(1, 0, 0.55, 0)
+	t2.Font = Enum.Font.GothamBold
+	t2.TextScaled = true
+	t2.TextColor3 = Color3.fromRGB(235, 238, 245)
+	t2.Text = "⭐1000 + 💎Divine + 🪙10M"
+	t2.Parent = board
+	local prompt = Instance.new("ProximityPrompt")
+	prompt.ActionText = "Unlock"
+	prompt.ObjectText = item.Name
+	prompt.HoldDuration = 0.4
+	prompt.MaxActivationDistance = 11
+	prompt.RequiresLineOfSight = false
+	prompt.Parent = card
+	prompt.Triggered:Connect(function(player)
+		onBuyShop(player, item.Id)
+	end)
+end
+
 local function placeImportedShop(folder, onBuyShop, onBuyKey, onEnterBackrooms)
 	-- ground for the shop island (always visible, no bridge-gating)
 	disc(folder, "ShopGround", SHOP, ISLAND_RADIUS, Color3.fromRGB(150, 148, 158), -2)
@@ -434,21 +445,31 @@ local function placeImportedShop(folder, onBuyShop, onBuyKey, onEnterBackrooms)
 		attachShopPrompt(shop, item, onBuyShop)
 	end
 
-	-- the Key (for sale, in front of the cashier) + the Backrooms door (behind him)
-	if npc and root then
-		local look = root.CFrame.LookVector
-		look = Vector3.new(look.X, 0, look.Z)
-		if look.Magnitude > 0.01 then
-			look = look.Unit
-			local pos = root.Position
-			if onBuyKey then
-				buildKey(folder, CFrame.new(pos.X + look.X * 4, pos.Y + 0.5, pos.Z + look.Z * 4), onBuyKey)
-			end
-			if onEnterBackrooms then
-				local behind = pos - look * 7
-				buildEntryDoor(folder, CFrame.lookAt(Vector3.new(behind.X, 0, behind.Z), Vector3.new(behind.X, 0, behind.Z) + look), onEnterBackrooms)
-			end
-		end
+	-- Ultimate Pack — a purchasable card on the shop floor, near the entrance
+	if onBuyShop and Config.ShopById.ultimatepack then
+		buildUltimatePad(folder, Config.ShopById.ultimatepack, Vector3.new(SHOP.X + 22, PAD_Y, SHOP.Z + 56), onBuyShop)
+	end
+
+	-- the Key (on the cashier's desk) + the Backrooms door (behind the cashier),
+	-- placed relative to the NPC, with a safe fallback if it can't be found
+	local npos, nlook
+	if root then
+		npos = root.Position
+		local lv = root.CFrame.LookVector
+		nlook = Vector3.new(lv.X, 0, lv.Z)
+		nlook = if nlook.Magnitude > 0.05 then nlook.Unit else Vector3.new(0, 0, 1)
+	else
+		npos = SHOP + Vector3.new(0, 5, 28)
+		nlook = Vector3.new(0, 0, 1)
+	end
+	local floorY = npos.Y - 3 -- approx the shop floor under the cashier
+	if onBuyKey then
+		local kp = npos + nlook * 3
+		buildKey(folder, CFrame.new(kp.X, floorY + 3, kp.Z) * CFrame.Angles(0, math.atan2(nlook.X, nlook.Z), 0), onBuyKey)
+	end
+	if onEnterBackrooms then
+		local b = npos - nlook * 7
+		buildEntryDoor(folder, CFrame.lookAt(Vector3.new(b.X, floorY, b.Z), Vector3.new(b.X, floorY, b.Z) + nlook), onEnterBackrooms)
 	end
 end
 
@@ -497,7 +518,7 @@ end
 
 -- ===== build everything ====================================================
 
-function TreeBuilder.Build(onBuy, onBuyBridge, onBuyShop, onBuyPack, onBuyKey, onEnterBackrooms)
+function TreeBuilder.Build(onBuy, onBuyBridge, onBuyShop, onBuyKey, onEnterBackrooms)
 	for _, legacyName in { "Baseplate", "SpawnPlaza", "MainIsland", "GoldenIsland", "GreenIsland", "RebirthBridge", "UpgradeTree" } do
 		local legacy = workspace:FindFirstChild(legacyName)
 		if legacy then
@@ -516,14 +537,9 @@ function TreeBuilder.Build(onBuy, onBuyBridge, onBuyShop, onBuyPack, onBuyKey, o
 	disc(folder, "GoldPlatform", GOLD, ISLAND_RADIUS, Color3.fromRGB(226, 192, 86), -2, "gold")
 	disc(folder, "GreenPlatform", GREEN, ISLAND_RADIUS, Color3.fromRGB(132, 196, 110), -2, "green")
 
-	buildTree(Config.Tree, folder, onBuy) -- hub coin trees (Greed + Luck)
-	buildTree(Config.RebirthTree, folder, onBuy) -- gold island
-	buildTree(Config.AutomationTree, folder, onBuy) -- green island
-
-	-- the four Card Pack unlock buttons, one per island
-	for _, pack in Config.Packs do
-		buildPackPad(pack, folder, onBuyPack)
-	end
+	buildTree(Config.Tree, folder, onBuy) -- hub coin trees + Pack Loader unlock
+	buildTree(Config.RebirthTree, folder, onBuy) -- gold island + Rebirth pack
+	buildTree(Config.AutomationTree, folder, onBuy) -- green island + Automation pack
 
 	buildRollTv(folder)
 	buildPackLoader(folder)

@@ -140,28 +140,16 @@ local function allUpgradesOwned(data)
 	return true
 end
 
--- does the player meet a pack button's unlock cost right now?
-local function packCanUnlock(data, pack, stats)
-	local u = pack.Unlock
-	if u.RareCards and tierCardCount(data, "Rare") < u.RareCards then
-		return false
+-- mark a pack owned (from buying its tree node / shop item / the free button) and
+-- auto-equip it if nothing is equipped yet
+local function unlockPack(data, packId)
+	if not packId or not Config.PackById[packId] then
+		return
 	end
-	if u.DivineCards and tierCardCount(data, "Divine") < u.DivineCards then
-		return false
+	data.UnlockedPacks[packId] = true
+	if data.EquippedPack == false or data.EquippedPack == nil then
+		data.EquippedPack = packId
 	end
-	if u.Coins and data.Coins < Config.ApplyPrice(u.Coins, stats) then
-		return false
-	end
-	if u.Tokens and data.RebirthTokens < Config.ApplyPrice(u.Tokens, stats) then
-		return false
-	end
-	if u.AllAutomation and not allAutomationOwned(data) then
-		return false
-	end
-	if u.AllUpgrades and not allUpgradesOwned(data) then
-		return false
-	end
-	return true
 end
 
 -- remove `count` copies of a tier from the collection (used to "spend" cards on
@@ -220,13 +208,6 @@ local function buildState(session, includeCards)
 		RareCardCount = tierCardCount(data, "Rare"),
 		DivineCardCount = tierCardCount(data, "Divine"),
 		HasKey = data.HasKey == true,
-		PackUnlockable = (function()
-			local m = {}
-			for _, pack in Config.Packs do
-				m[pack.Id] = packCanUnlock(data, pack, session.Stats)
-			end
-			return m
-		end)(),
 		HasFastAuto = session.HasFastAuto == true,
 		AutoInterval = if session.HasFastAuto then Config.Roll.AutoIntervalFast else Config.Roll.AutoInterval,
 		Stats = session.Stats,
@@ -543,11 +524,23 @@ local function onBuyUpgrade(player, nodeId)
 	if treeNode.MaxLevel and level >= treeNode.MaxLevel then
 		return
 	end
+	-- pack-unlock nodes are owned forever (the hub one resets on rebirth, so this
+	-- stops you re-buying / re-spending Rares for a pack you already have)
+	if treeNode.UnlocksPack and data.UnlockedPacks[treeNode.UnlocksPack] then
+		return
+	end
 	if treeNode.Requires and (levels[treeNode.Requires] or 0) < 1 then
 		return
 	end
 	if treeNode.IsAutomation and not data.AutomationUnlocked then
 		return -- must buy Automation at the Card Opener first
+	end
+	-- extra gates for pack-unlock nodes
+	if treeNode.RequireAllAutomation and not allAutomationOwned(data) then
+		return
+	end
+	if treeNode.SpendRares and tierCardCount(data, "Rare") < treeNode.SpendRares then
+		return -- need the Rare cards to spend
 	end
 	local cost = Config.ApplyPrice(Config.GetNodeCost(treeNode, level), session.Stats)
 	if treeNode.IsRebirth then
@@ -567,6 +560,18 @@ local function onBuyUpgrade(player, nodeId)
 	-- Buying the Automaton Core (root of the green tree) unlocks auto-roll.
 	if nodeId == "autocore" then
 		data.AutomationUnlocked = true
+	end
+	-- pack-unlock nodes: spend the cards, grant the pack (+ the loader for Basic)
+	if treeNode.SpendRares then
+		consumeTierCards(session, "Rare", treeNode.SpendRares)
+		session.CardsDirty = true
+	end
+	if treeNode.GrantsLoader then
+		data.PackLoaderUnlocked = true
+	end
+	if treeNode.UnlocksPack then
+		unlockPack(data, treeNode.UnlocksPack)
+		announce(("📦 %s unlocked the %s!"):format(player.Name, Config.PackById[treeNode.UnlocksPack].Name))
 	end
 
 	session.Stats = Config.ComputeStats(data)
@@ -763,54 +768,7 @@ collectionViewRemote.OnServerEvent:Connect(function(player, open)
 	end
 end)
 
--- Buy a Card Pack's unlock button (out in the world, via its prompt). Spends the
--- required cards / coins / tokens, marks the pack owned forever, and (for the
--- Basic button) turns the Pack Loader on. Auto-equips if you have none equipped.
-local function onBuyPack(player, packId)
-	local session = sessions[player]
-	local pack = type(packId) == "string" and Config.PackById[packId]
-	if not session or not pack then
-		return
-	end
-	local data = session.Data
-	if data.UnlockedPacks[pack.Id] then
-		return -- already owned
-	end
-	if not packCanUnlock(data, pack, session.Stats) then
-		return
-	end
-
-	-- pay the cost
-	local u = pack.Unlock
-	if u.Coins then
-		data.Coins -= Config.ApplyPrice(u.Coins, session.Stats)
-	end
-	if u.Tokens then
-		data.RebirthTokens -= Config.ApplyPrice(u.Tokens, session.Stats)
-	end
-	if u.RareCards then
-		consumeTierCards(session, "Rare", u.RareCards)
-	end
-	if u.DivineCards then
-		consumeTierCards(session, "Divine", u.DivineCards)
-	end
-
-	data.UnlockedPacks[pack.Id] = true
-	if u.GrantsLoader then
-		data.PackLoaderUnlocked = true
-	end
-	if data.EquippedPack == false or data.EquippedPack == nil then
-		data.EquippedPack = pack.Id -- auto-equip your first / when none equipped
-	end
-
-	session.Stats = Config.ComputeStats(data)
-	session.CardsDirty = true -- spending cards changed the collection
-	announce(("📦 %s unlocked the %s!"):format(player.Name, pack.Name))
-	pushState(player, false)
-end
-
--- Grant a random pack the player doesn't own yet (the Backrooms free-pack
--- button). Auto-equips it if nothing is equipped.
+-- Grant a random pack the player doesn't own yet (the Backrooms free button).
 local function grantRandomPack(player)
 	local session = sessions[player]
 	if not session then
@@ -828,11 +786,8 @@ local function grantRandomPack(player)
 		return
 	end
 	local id = missing[math.random(1, #missing)]
-	data.UnlockedPacks[id] = true
 	data.PackLoaderUnlocked = true -- the free find also lets you equip
-	if data.EquippedPack == false or data.EquippedPack == nil then
-		data.EquippedPack = id
-	end
+	unlockPack(data, id)
 	session.Stats = Config.ComputeStats(data)
 	tickerRemote:FireClient(player, ("🎁 Free Card Pack: %s!"):format(Config.PackById[id].Name))
 	pushState(player, false)
@@ -1091,6 +1046,14 @@ local function onBuyShop(player, itemId)
 	if data.Coins < cost then
 		return
 	end
+	-- the Ultimate Pack item also costs tokens + a Divine card
+	local tokenCost = item.TokenCost and Config.ApplyPrice(item.TokenCost, session.Stats) or 0
+	if data.RebirthTokens < tokenCost then
+		return
+	end
+	if item.DivineCards and tierCardCount(data, "Divine") < item.DivineCards then
+		return
+	end
 
 	if itemId == "luckyblock" then
 		-- a guaranteed Mythic+ card with bonus value, straight into the collection
@@ -1120,7 +1083,16 @@ local function onBuyShop(player, itemId)
 	end
 
 	data.Coins -= cost
+	data.RebirthTokens -= tokenCost
+	if item.DivineCards then
+		consumeTierCards(session, "Divine", item.DivineCards)
+		session.CardsDirty = true
+	end
 	data.ShopUpgrades[itemId] = level + 1
+	if item.UnlocksPack then
+		unlockPack(data, item.UnlocksPack)
+		announce(("📦 %s unlocked the %s!"):format(player.Name, Config.PackById[item.UnlocksPack].Name))
+	end
 	session.Stats = Config.ComputeStats(data)
 	applyCharacterEffects(player, session)
 	pushState(player, false)
@@ -1258,7 +1230,7 @@ end)
 
 -- ===== world ===============================================================
 
-TreeBuilder.Build(onBuyUpgrade, onBuyBridge, onBuyShop, onBuyPack, onBuyKey, onEnterBackrooms)
+TreeBuilder.Build(onBuyUpgrade, onBuyBridge, onBuyShop, onBuyKey, onEnterBackrooms)
 Leaderboard.Start()
 
 -- Backrooms (Level 0): a far-off maze you reach with the Key + the shop door
