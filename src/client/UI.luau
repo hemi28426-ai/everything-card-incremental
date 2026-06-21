@@ -379,6 +379,19 @@ function UI:ShowTVCard(card)
 			Parent = self.TVCardHolder,
 		})
 		addCorner(avatar, UDim.new(0, 12))
+	else
+		local glyph = create("TextLabel", {
+			AnchorPoint = Vector2.new(0.5, 0),
+			Position = UDim2.new(0.5, 0, 0.04, 0),
+			Size = UDim2.new(0.7, 0, 0.46, 0),
+			BackgroundColor3 = tier.Color:Lerp(Color3.new(0, 0, 0), 0.55),
+			Font = Enum.Font.GothamBlack,
+			TextScaled = true,
+			TextColor3 = tier.Color,
+			Text = card.Icon or "?",
+			Parent = self.TVCardHolder,
+		})
+		addCorner(glyph, UDim.new(0, 12))
 	end
 	create("TextLabel", {
 		BackgroundTransparency = 1,
@@ -1179,6 +1192,18 @@ function UI:RebuildCollection()
 				Parent = row,
 			})
 			addCorner(thumb, UDim.new(1, 0))
+		else
+			local glyph = create("TextLabel", {
+				BackgroundColor3 = tier.Color:Lerp(Color3.new(0, 0, 0), 0.55),
+				Position = UDim2.new(0, 6, 0.5, -21),
+				Size = UDim2.fromOffset(42, 42),
+				Font = Enum.Font.GothamBlack,
+				TextSize = 22,
+				TextColor3 = tier.Color,
+				Text = card.Icon or "?",
+				Parent = row,
+			})
+			addCorner(glyph, UDim.new(1, 0))
 		end
 
 		create("TextLabel", {

@@ -125,14 +125,14 @@ function Cards:BuildCardFrame(card, width, parent)
 		create("UICorner", { CornerRadius = UDim.new(1, 0), Parent = image })
 	else
 		local placeholder = create("TextLabel", {
-			BackgroundColor3 = Color3.fromRGB(20, 14, 34),
+			BackgroundColor3 = if card.Icon then tier.Color:Lerp(Color3.new(0, 0, 0), 0.55) else Color3.fromRGB(20, 14, 34),
 			AnchorPoint = Vector2.new(0.5, 0),
 			Position = UDim2.new(0.5, 0, 0, 12),
 			Size = UDim2.fromOffset(imageSize, imageSize),
 			Font = Enum.Font.GothamBlack,
 			TextSize = math.floor(imageSize * 0.5),
-			TextColor3 = DIM_COLOR,
-			Text = "?",
+			TextColor3 = if card.Icon then tier.Color else DIM_COLOR,
+			Text = card.Icon or "?",
 			ZIndex = 12,
 			Parent = frame,
 		})

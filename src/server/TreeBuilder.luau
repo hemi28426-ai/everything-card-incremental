@@ -10,6 +10,7 @@ local ServerStorage = game:GetService("ServerStorage")
 
 local Shared = ReplicatedStorage:WaitForChild("Shared")
 local Config = require(Shared:WaitForChild("Config"))
+local Backrooms = require(script.Parent:WaitForChild("Backrooms"))
 
 local TreeBuilder = {}
 
@@ -319,35 +320,87 @@ local function buildKey(parent, cf, onBuyKey)
 	model.Parent = parent
 end
 
--- the metal door behind the cashier: swing script stripped, just an E to enter
-local function buildEntryDoor(parent, cf, onEnter)
-	local template = ReplicatedStorage:FindFirstChild("MetalDoor")
-	if not template then
-		return
+-- A self-contained Backrooms entrance on the shop island: a chunky concrete wall
+-- with the metal door set into it (so the door is genuinely IN a wall) and a sign
+-- overhead. Placed at a fixed, always-visible spot — it no longer depends on the
+-- imported shop's NPC, which is why the old door/key kept vanishing into the model.
+local function buildBackroomsEntrance(folder, onBuyKey, onEnterBackrooms)
+	local floorY = 0 -- the shop island disc tops out at y = 0
+	local pos = SHOP + Vector3.new(52, floorY, 6)
+	local arrival = Vector3.new(0, floorY, SHOP.Z + ISLAND_RADIUS) -- the bridge mouth
+	local cf = CFrame.lookAt(pos, Vector3.new(arrival.X, floorY, arrival.Z))
+	local right = cf.RightVector
+
+	-- a small dais so the wall reads as a deliberate structure
+	makePart({
+		Name = "EntranceBase",
+		Size = Vector3.new(30, 1, 10),
+		CFrame = cf * CFrame.new(0, 0.4, 0),
+		Color = Color3.fromRGB(60, 58, 66),
+		Material = Enum.Material.Concrete,
+		Parent = folder,
+	})
+
+	if onEnterBackrooms then
+		Backrooms.BuildFramedDoor(folder, cf * CFrame.new(0, 0.9, 0), {
+			WallWidth = 28,
+			WallHeight = 15,
+			WallColor = Color3.fromRGB(78, 76, 84),
+			WallMaterial = Enum.Material.Concrete,
+			ActionText = "Enter",
+			ObjectText = "🚪 The Backrooms",
+			OnTrigger = function(player)
+				onEnterBackrooms(player)
+			end,
+		})
 	end
-	local door = template:Clone()
-	for _, d in door:GetDescendants() do
-		if d:IsA("BaseScript") then
-			d:Destroy()
-		elseif d:IsA("BasePart") then
-			d.Anchored = true
-		end
+
+	-- a readable sign over the doorway (sensible MaxDistance — no 5000-stud font)
+	local sign = makePart({
+		Name = "EntranceSign",
+		Size = Vector3.new(16, 0.4, 1.2),
+		CFrame = cf * CFrame.new(0, 16.2, 0),
+		Color = Color3.fromRGB(22, 21, 26),
+		Material = Enum.Material.SmoothPlastic,
+		Parent = folder,
+	})
+	local board = Instance.new("BillboardGui")
+	board.Size = UDim2.fromOffset(260, 70)
+	board.StudsOffset = Vector3.new(0, 1.4, 0)
+	board.AlwaysOnTop = false
+	board.MaxDistance = 120
+	board.Parent = sign
+	local title = Instance.new("TextLabel")
+	title.BackgroundTransparency = 1
+	title.Size = UDim2.new(1, 0, 0.6, 0)
+	title.Font = Enum.Font.GothamBlack
+	title.TextScaled = true
+	title.TextColor3 = Color3.fromRGB(225, 205, 110)
+	title.Text = "THE BACKROOMS"
+	title.Parent = board
+	local sub = Instance.new("TextLabel")
+	sub.BackgroundTransparency = 1
+	sub.Position = UDim2.new(0, 0, 0.6, 0)
+	sub.Size = UDim2.new(1, 0, 0.4, 0)
+	sub.Font = Enum.Font.GothamMedium
+	sub.TextScaled = true
+	sub.TextColor3 = Color3.fromRGB(170, 168, 178)
+	sub.Text = "Level 0 — Key required"
+	sub.Parent = board
+
+	-- the Key, on a pedestal right beside the door
+	if onBuyKey then
+		local kpos = pos + right * 11
+		makePart({
+			Name = "KeyPedestal",
+			Size = Vector3.new(3.5, 3, 3.5),
+			CFrame = CFrame.new(kpos.X, floorY + 1.5, kpos.Z),
+			Color = Color3.fromRGB(48, 46, 54),
+			Material = Enum.Material.Concrete,
+			Parent = folder,
+		})
+		buildKey(folder, CFrame.new(kpos.X, floorY + 4.2, kpos.Z) * CFrame.Angles(0, math.atan2(right.X, right.Z), 0), onBuyKey)
 	end
-	local bbcf, size = door:GetBoundingBox()
-	local centerToPivot = bbcf:ToObjectSpace(door:GetPivot())
-	door:PivotTo(cf * CFrame.new(0, size.Y / 2, 0) * centerToPivot)
-	door.Parent = parent
-	local anchor = door.PrimaryPart or door:FindFirstChildWhichIsA("BasePart", true)
-	local prompt = Instance.new("ProximityPrompt")
-	prompt.ActionText = "Enter"
-	prompt.ObjectText = "🚪 The Backrooms"
-	prompt.HoldDuration = 0.4
-	prompt.MaxActivationDistance = 11
-	prompt.RequiresLineOfSight = false
-	prompt.Parent = anchor
-	prompt.Triggered:Connect(function(player)
-		onEnter(player)
-	end)
 end
 
 -- the Ultimate Pack as a purchasable display in the shop (a standing card + pad)
@@ -391,7 +444,7 @@ local function buildUltimatePad(folder, item, pos, onBuyShop)
 	end)
 end
 
-local function placeImportedShop(folder, onBuyShop, onBuyKey, onEnterBackrooms)
+local function placeImportedShop(folder, onBuyShop)
 	-- ground for the shop island (always visible, no bridge-gating)
 	disc(folder, "ShopGround", SHOP, ISLAND_RADIUS, Color3.fromRGB(150, 148, 158), -2)
 
@@ -450,27 +503,6 @@ local function placeImportedShop(folder, onBuyShop, onBuyKey, onEnterBackrooms)
 		buildUltimatePad(folder, Config.ShopById.ultimatepack, Vector3.new(SHOP.X + 22, PAD_Y, SHOP.Z + 56), onBuyShop)
 	end
 
-	-- the Key (on the cashier's desk) + the Backrooms door (behind the cashier),
-	-- placed relative to the NPC, with a safe fallback if it can't be found
-	local npos, nlook
-	if root then
-		npos = root.Position
-		local lv = root.CFrame.LookVector
-		nlook = Vector3.new(lv.X, 0, lv.Z)
-		nlook = if nlook.Magnitude > 0.05 then nlook.Unit else Vector3.new(0, 0, 1)
-	else
-		npos = SHOP + Vector3.new(0, 5, 28)
-		nlook = Vector3.new(0, 0, 1)
-	end
-	local floorY = npos.Y - 3 -- approx the shop floor under the cashier
-	if onBuyKey then
-		local kp = npos + nlook * 3
-		buildKey(folder, CFrame.new(kp.X, floorY + 3, kp.Z) * CFrame.Angles(0, math.atan2(nlook.X, nlook.Z), 0), onBuyKey)
-	end
-	if onEnterBackrooms then
-		local b = npos - nlook * 7
-		buildEntryDoor(folder, CFrame.lookAt(Vector3.new(b.X, floorY, b.Z), Vector3.new(b.X, floorY, b.Z) + nlook), onEnterBackrooms)
-	end
 end
 
 -- ===== bridges =============================================================
@@ -549,11 +581,16 @@ function TreeBuilder.Build(onBuy, onBuyBridge, onBuyShop, onBuyKey, onEnterBackr
 	buildBridge(folder, "green", Vector3.new(-HUB_RADIUS, 0, 0), Vector3.new(GREEN.X + ISLAND_RADIUS, 0, 0), onBuyBridge)
 	buildBridge(folder, "shop", Vector3.new(0, 0, -HUB_RADIUS), Vector3.new(0, 0, SHOP.Z + ISLAND_RADIUS), onBuyBridge)
 
+	-- the Key + Backrooms door are their own self-contained structure on the shop
+	-- island — built here (not inside the shop loader) so they always appear even
+	-- if the imported shop model ever fails to load
+	buildBackroomsEntrance(folder, onBuyKey, onEnterBackrooms)
+
 	folder.Parent = workspace
 
 	-- place the imported shop after the folder exists (it lives in workspace)
 	task.spawn(function()
-		placeImportedShop(folder, onBuyShop, onBuyKey, onEnterBackrooms)
+		placeImportedShop(folder, onBuyShop)
 	end)
 end
 
