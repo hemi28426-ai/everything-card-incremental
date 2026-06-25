@@ -269,7 +269,7 @@ local function addCardToCollection(session, card, forceKeep)
 		owned.Count += 1
 		return { IsNew = false, Count = owned.Count }
 	end
-	if uniqueCount(session) >= backpackCapacity(session) then
+	if uniqueCount(session) >= backpackCapacity(session) and not forceKeep then
 		local soldFor = math.floor(tier.SellValue * stats.DupeMult)
 		data.Coins += soldFor
 		data.TotalEarned += soldFor
@@ -283,6 +283,7 @@ local function addCardToCollection(session, card, forceKeep)
 		Boost = card.Boost,
 		Traits = card.Traits,
 		Flavor = card.Flavor,
+		Icon = card.Icon,
 		Count = 1,
 	}
 	session.UniqueCount = uniqueCount(session) + 1
@@ -768,29 +769,45 @@ collectionViewRemote.OnServerEvent:Connect(function(player, open)
 	end
 end)
 
--- Grant a random pack the player doesn't own yet (the Backrooms free button).
-local function grantRandomPack(player)
+-- Grant the unique Backrooms card — the hidden object lost in Level 0. One per
+-- player; returns false (so the object stays put) if they already have it.
+local function grantBackroomsCard(player)
 	local session = sessions[player]
 	if not session then
-		return
+		return false
 	end
 	local data = session.Data
-	local missing = {}
-	for _, pack in Config.Packs do
-		if not data.UnlockedPacks[pack.Id] then
-			table.insert(missing, pack.Id)
-		end
+	if data.HasBackroomsCard then
+		tickerRemote:FireClient(player, "🚪 You already carried The Backrooms out of here.")
+		return false
 	end
-	if #missing == 0 then
-		tickerRemote:FireClient(player, "🎁 You already own every Card Pack!")
-		return
+	local def = Config.BackroomsCard
+	local card = {
+		UserId = def.UserId,
+		Name = def.Name,
+		DisplayName = def.DisplayName,
+		Tier = def.Tier,
+		Boost = def.Boost,
+		Traits = def.Traits,
+		Flavor = def.Flavor,
+		Icon = def.Icon,
+	}
+	local outcome = addCardToCollection(session, card, true)
+	data.HasBackroomsCard = true
+	local tier = Config.TierByName[card.Tier]
+	if tier and tier.Index > data.BestTier then
+		data.BestTier = tier.Index
 	end
-	local id = missing[math.random(1, #missing)]
-	data.PackLoaderUnlocked = true -- the free find also lets you equip
-	unlockPack(data, id)
-	session.Stats = Config.ComputeStats(data)
-	tickerRemote:FireClient(player, ("🎁 Free Card Pack: %s!"):format(Config.PackById[id].Name))
+	announce(("🚪 %s found %s, lost deep in the Backrooms!"):format(player.Name, card.DisplayName))
+	rollResultRemote:FireClient(player, { Cards = { {
+		UserId = card.UserId, Name = card.Name, DisplayName = card.DisplayName,
+		Tier = card.Tier, Boost = card.Boost, Traits = card.Traits, Flavor = card.Flavor,
+		Icon = card.Icon, IsNew = outcome.IsNew, Count = outcome.Count, AutoSold = outcome.AutoSold,
+		SoldFor = outcome.SoldFor, Reason = outcome.Reason, TierIndex = tier and tier.Index or 0,
+	} }, Total = 1, Auto = false })
+	session.CardsDirty = true
 	pushState(player, false)
+	return true
 end
 
 -- Buy the Backrooms Key in the shop (costs a lot of tokens AND coins).
@@ -1233,9 +1250,10 @@ end)
 TreeBuilder.Build(onBuyUpgrade, onBuyBridge, onBuyShop, onBuyKey, onEnterBackrooms)
 Leaderboard.Start()
 
--- Backrooms (Level 0): a far-off maze you reach with the Key + the shop door
+-- Backrooms (Level 0): a far-off procedural maze you reach with the Key + the
+-- shop-island door; the hidden Almond Water grants the unique Backrooms card.
 Backrooms.Init({
-	OnFreePack = grantRandomPack,
+	OnBackroomsCard = grantBackroomsCard,
 	GetHomeCFrame = function()
 		local spawn = workspace:FindFirstChildWhichIsA("SpawnLocation")
 		if spawn then

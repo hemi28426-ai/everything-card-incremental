@@ -343,7 +343,7 @@ rnode({ Id = "rc3", Name = "Hoarder", Desc = "+1 equip slot", Icon = "📦", Bra
 rnode({ Id = "rc4", Name = "Vault Lord", Desc = "+2 equip slots", Icon = "🗄️", Branch = "RCap", Cost = 22, Requires = "rc2" })
 
 -- Meta branch (forks at Token Tithe)
-rnode({ Id = "rm1", Name = "Token Tithe", Desc = "+2 tokens from every rebirth", Icon = "🪙", Branch = "RMeta", Cost = 6, Requires = "core" })
+rnode({ Id = "rm1", Name = "Token Tithe", Desc = "+2 tokens from every rebirth", Icon = "💰", Branch = "RMeta", Cost = 6, Requires = "core" })
 rnode({ Id = "rm2", Name = "Legendary Keeper", Desc = "Legendary cards survive rebirth", Icon = "🛡️", Branch = "RMeta", Cost = 10, Requires = "rm1" })
 rnode({ Id = "rm3", Name = "Token Hoarder", Desc = "+3 tokens from every rebirth", Icon = "⭐", Branch = "RMeta", Cost = 18, Requires = "rm1" })
 
@@ -450,13 +450,46 @@ function Config.ApplyPrice(cost, stats)
 end
 
 -- ===== Backrooms (Level 0) =================================================
--- The real uploaded Level 0 map (ServerStorage.BackroomsMap, 400x400) placed far
--- from the main world. Buy the Key in the shop, then the door behind the cashier
--- teleports you in. No entities. The client adds fog so you can't see the edge.
--- Scattered exit doors take you home; a hidden button grants a free Card Pack.
+-- Level 0 is GENERATED at runtime (src/server/Backrooms.luau): a randomized maze
+-- of mono-yellow rooms, dropped far from the main world. Buy the Key in the shop,
+-- use the framed door on the shop island to teleport in. No entities. The client
+-- adds fog so you can't see the edge. Exit doors are set into the outer walls; one
+-- hidden object, lost somewhere in the maze, grants the unique Backrooms card.
+-- The wall/floor textures are the authentic Level 0 ones from the reference model.
 Config.Backrooms = {
-	Origin = Vector3.new(100000, 0, 100000), -- where the map is dropped, far away
+	Origin = Vector3.new(100000, 0, 100000), -- where the maze is generated, far away
 	FogEnd = 90, -- client fog distance — "you can't see the end"
+
+	-- maze geometry (a GridW x GridH grid of square cells)
+	GridW = 14,
+	GridH = 14,
+	Cell = 24, -- stud size of one cell
+	WallHeight = 14,
+	WallThick = 1.5,
+	ExtraOpenChance = 0.45, -- chance a leftover maze wall is removed (open rooms/loops)
+	ExitCount = 4, -- exit doors set into the outer walls
+	LightEvery = 2, -- a fluorescent ceiling panel every N cells (keeps light count sane)
+
+	-- the genuine Level 0 textures, lifted from the reference model
+	WallTexture = "rbxassetid://10194957829", -- damp yellow wallpaper
+	FloorTexture = "rbxassetid://9987698068", -- moist carpet
+	WallColor = Color3.fromRGB(188, 172, 96),
+	FloorColor = Color3.fromRGB(150, 138, 86),
+	CeilingColor = Color3.fromRGB(208, 200, 170),
+}
+
+-- The unique Backrooms card — NOT a real account, so it uses a sentinel UserId
+-- (< 0) and its own art/flavor. Mythic tier means it survives rebirth. You only
+-- ever get ONE, by finding the hidden object lost in the maze.
+Config.BackroomsCard = {
+	UserId = -101,
+	Name = "Level 0",
+	DisplayName = "The Backrooms",
+	Tier = "Mythic",
+	Boost = 750,
+	Icon = "🚪",
+	Traits = { "Level 0", "Noclip" },
+	Flavor = "You noclipped out of reality. ~600 million sq mi of moist carpet, buzzing fluorescent light, and the smell of old wallpaper. The hum never stops.",
 }
 
 -- The Backrooms Key — sold in the shop for a lot of tokens AND coins.

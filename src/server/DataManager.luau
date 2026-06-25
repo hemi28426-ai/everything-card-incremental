@@ -36,7 +36,7 @@ local DEFAULT_DATA = {
 	BestTier = 0, -- highest tier index ever pulled
 	Upgrades = {}, -- (legacy, unused now the purple tree is gone)
 	RollSpeedLevel = 0, -- manual roll-speed upgrade bought on the TV
-	Cards = {}, -- userId (as string) -> {Name, DisplayName, Tier, Boost, Traits, Flavor?, Count}
+	Cards = {}, -- userId (as string) -> {Name, DisplayName, Tier, Boost, Traits, Flavor?, Icon?, Count}
 	Equipped = {}, -- array of userId strings
 	AutoSell = {}, -- tierName -> true (auto-sell pulls of this tier)
 	AutoOn = false, -- TV auto-roll toggle (every 3s; gamepass makes it instant)
@@ -48,7 +48,8 @@ local DEFAULT_DATA = {
 	PackLoaderUnlocked = false, -- bought the Pack Loader 3000 (lets you equip packs)
 	UnlockedPacks = {}, -- packId -> true (unlocked by buying the world buttons)
 	EquippedPack = false, -- the one currently-equipped pack id, or false
-	HasKey = false, -- owns the Backrooms Key (door behind the cashier works)
+	HasKey = false, -- owns the Backrooms Key (the shop-island door works)
+	HasBackroomsCard = false, -- already found the unique Backrooms card in Level 0
 	LastSeen = 0,
 }
 
