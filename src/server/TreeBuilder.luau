@@ -261,7 +261,7 @@ local function attachShopPrompt(shop, item, onBuyShop)
 	price.Font = Enum.Font.GothamBold
 	price.TextScaled = true
 	price.TextColor3 = Color3.fromRGB(235, 238, 245)
-	price.Text = "🪙 " .. item.Cost
+	price.Text = "💰 " .. item.Cost
 	price.Parent = billboard
 end
 
@@ -304,7 +304,7 @@ local function buildKey(parent, cf, onBuyKey)
 	t2.Font = Enum.Font.GothamBold
 	t2.TextScaled = true
 	t2.TextColor3 = Color3.fromRGB(235, 238, 245)
-	t2.Text = ("⭐%d  +  🪙5M"):format(Config.Key.Tokens)
+	t2.Text = ("⭐%d  +  💰5M"):format(Config.Key.Tokens)
 	t2.Parent = board
 
 	local prompt = Instance.new("ProximityPrompt")
@@ -430,7 +430,7 @@ local function buildUltimatePad(folder, item, pos, onBuyShop)
 	t2.Font = Enum.Font.GothamBold
 	t2.TextScaled = true
 	t2.TextColor3 = Color3.fromRGB(235, 238, 245)
-	t2.Text = "⭐1000 + 💎Divine + 🪙10M"
+	t2.Text = "⭐1000 + 💎Divine + 💰10M"
 	t2.Parent = board
 	local prompt = Instance.new("ProximityPrompt")
 	prompt.ActionText = "Unlock"

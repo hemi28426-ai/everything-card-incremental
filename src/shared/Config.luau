@@ -343,7 +343,7 @@ rnode({ Id = "rc3", Name = "Hoarder", Desc = "+1 equip slot", Icon = "📦", Bra
 rnode({ Id = "rc4", Name = "Vault Lord", Desc = "+2 equip slots", Icon = "🗄️", Branch = "RCap", Cost = 22, Requires = "rc2" })
 
 -- Meta branch (forks at Token Tithe)
-rnode({ Id = "rm1", Name = "Token Tithe", Desc = "+2 tokens from every rebirth", Icon = "🪙", Branch = "RMeta", Cost = 6, Requires = "core" })
+rnode({ Id = "rm1", Name = "Token Tithe", Desc = "+2 tokens from every rebirth", Icon = "💰", Branch = "RMeta", Cost = 6, Requires = "core" })
 rnode({ Id = "rm2", Name = "Legendary Keeper", Desc = "Legendary cards survive rebirth", Icon = "🛡️", Branch = "RMeta", Cost = 10, Requires = "rm1" })
 rnode({ Id = "rm3", Name = "Token Hoarder", Desc = "+3 tokens from every rebirth", Icon = "⭐", Branch = "RMeta", Cost = 18, Requires = "rm1" })
 

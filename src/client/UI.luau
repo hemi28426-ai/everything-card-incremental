@@ -86,7 +86,7 @@ function UI:Build()
 		Font = Enum.Font.GothamBlack,
 		TextSize = 30,
 		TextColor3 = COLORS.Gold,
-		Text = "🪙 0",
+		Text = "💰 0",
 		Parent = stats,
 	})
 	self.RateLabel = create("TextLabel", {
@@ -440,7 +440,7 @@ function UI:UpdateTV()
 		self.TVSpeedButton.BackgroundColor3 = COLORS.Disabled
 	else
 		local cost = Config.ApplyPrice(state.RollSpeedCost or 0, state.Stats)
-		self.TVSpeedButton.Text = ("Roll Speed  Lv %d/%d\n🪙 %s"):format(level, maxLevel, Format(cost))
+		self.TVSpeedButton.Text = ("Roll Speed  Lv %d/%d\n💰 %s"):format(level, maxLevel, Format(cost))
 		self.TVSpeedButton.BackgroundColor3 = if state.Coins >= cost then Color3.fromRGB(150, 120, 220) else COLORS.Disabled
 	end
 
@@ -512,7 +512,7 @@ function UI:UpdateShop()
 		else
 			local cost = Config.ApplyPrice(Config.GetShopCost(item, level), state.Stats)
 			local suffix = if item.MaxLevel and item.MaxLevel > 1 then (" • Lv %d/%d"):format(level, item.MaxLevel) else ""
-			t.Price.Text = ("🪙 %s%s"):format(Format(cost), suffix)
+			t.Price.Text = ("💰 %s%s"):format(Format(cost), suffix)
 			t.Price.TextColor3 = if state.Coins >= cost then Color3.fromRGB(150, 235, 150) else Color3.fromRGB(235, 160, 160)
 			if t.Prompt then
 				t.Prompt.Enabled = true
@@ -1818,7 +1818,7 @@ function UI:UpdatePads()
 			text, affordable, promptOn = "✓ OWNED", true, false
 		else
 			local cost = Config.ApplyPrice(Config.GetNodeCost(treeNode, level), state.Stats)
-			local icon = if treeNode.IsRebirth then "⭐" else "🪙"
+			local icon = if treeNode.IsRebirth then "⭐" else "💰"
 			local wallet = if treeNode.IsRebirth then state.RebirthTokens else state.Coins
 			if treeNode.SpendRares then
 				-- the Pack Loader node also spends Rare cards
@@ -1853,10 +1853,10 @@ function UI:UpdatePads()
 		local r = state.Rebirth
 		if r.HasLegendary and r.TokensIfNow >= 1 then
 			local total = r.TokensIfNow + r.BonusTokens
-			self.AltarLabel.Text = ("READY!  Hold E for ⭐ %d token%s\nNext token at 🪙 %s")
+			self.AltarLabel.Text = ("READY!  Hold E for ⭐ %d token%s\nNext token at 💰 %s")
 				:format(total, total == 1 and "" or "s", Format(r.NextAt))
 		else
-			self.AltarLabel.Text = ("%s Legendary+ card\n%s 🪙 %s / %s")
+			self.AltarLabel.Text = ("%s Legendary+ card\n%s 💰 %s / %s")
 				:format(
 					r.HasLegendary and "✓" or "✗",
 					r.TokensIfNow >= 1 and "✓" or "✗",
@@ -1923,7 +1923,7 @@ function UI:Update(state)
 		end
 	end
 
-	self.CoinsLabel.Text = "🪙 " .. Format(state.Coins)
+	self.CoinsLabel.Text = "💰 " .. Format(state.Coins)
 	self.RateLabel.Text = ("+%s coins/s"):format(Format(state.CoinsPerSec))
 	local bestTier = Config.Tiers[state.BestTier]
 	self.RollsLabel.Text = ("Rolls: %s  (all-time %s)%s"):format(
